@@ -1,0 +1,18 @@
+Aspectra 2 validation — 2026-09-06
+
+PASS: crop, dimensions, alpha, color, recolor, multi-size batch, ZIP, cancellation, MP4 encode/decode, segment trimming, audio retention and GIF export
+
+
+PASS: live padding, overlays, stroke, glow, shadows, bevel and opacity
+PASS: six outputs across two sizes and three image formats
+PASS: two enabled clips × MP4/MOV/WEBM/GIF; correct dimensions and durations
+PASS: styled video with padding and live color pipeline
+BENCHMARK 1920×1080 levels: old 999.1 ms; new 12.6 ms; 79.02× faster in this run
+
+PASS: previous/next navigation, live color, padding and style controls
+PASS: separate export overlay
+PASS: playable video, seek and two separate marker ranges
+
+PASS: PSD layer selection, compositing and alpha tests; supplied aspectra - logo.psd selected script artboard rendered successfully.
+
+PASS: integration ZIP CRC checks.

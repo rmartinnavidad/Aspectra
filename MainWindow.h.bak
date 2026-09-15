@@ -1,0 +1,87 @@
+#pragma once
+#include <QtWidgets>
+#include <QtConcurrent>
+#include <QMediaPlayer>
+#include <QAudioOutput>
+#include <QVideoSink>
+#include <QMovie>
+#include "Processing.h"
+#include "PreviewWidget.h"
+#include "TimelineWidget.h"
+struct LoadedMedia { QImage image;MediaInfo info;QString error;quint64 serial=0;QVector<int> gifTimes; };
+class MainWindow : public QWidget {
+    Q_OBJECT
+    friend int runUiTests(MainWindow &);
+    friend int runPowerUiTests(MainWindow &);
+public:
+    explicit MainWindow(QWidget *parent=nullptr);
+    ~MainWindow() override;
+    void loadFiles(const QStringList &paths);
+    void savePreview(const QString &path);
+protected:
+    void dragEnterEvent(QDragEnterEvent *) override;
+    void dropEvent(QDropEvent *) override;
+    void closeEvent(QCloseEvent *) override;
+    void mousePressEvent(QMouseEvent *) override;
+    void mouseMoveEvent(QMouseEvent *) override;
+private:
+    BatchManager batch;QImage original;QString currentFile,lastFolder,recordFile;MediaInfo media;
+    PreviewWidget *preview=nullptr;
+    QLabel *filename=nullptr,*status=nullptr,*info=nullptr,*batchLabel=nullptr,*zoomValue=nullptr,*thumbnail=nullptr,*timeLabel=nullptr,*navLabel=nullptr;
+    QSpinBox *widthInput=nullptr,*heightInput=nullptr,*quality=nullptr,*crf=nullptr;
+    QSlider *zoom=nullptr;
+    QCheckBox *lock=nullptr,*zip=nullptr,*rar=nullptr,*flat=nullptr,*guides=nullptr;
+    QComboBox *ratio=nullptr,*previewVariant=nullptr,*navigation=nullptr,*archiveMode=nullptr,*workerCount=nullptr;
+    QDoubleSpinBox *inMarker=nullptr,*outMarker=nullptr;
+    QListWidget *sizes=nullptr;QTableWidget *clipTable=nullptr;
+    QTabWidget *tabs=nullptr;
+    QPushButton *exportButton=nullptr,*playButton=nullptr,*captureButton=nullptr;
+    QWidget *captureRow=nullptr,*videoRow=nullptr;QButtonGroup *modes=nullptr;
+    QMap<QString,QSlider*> sliders;QMap<QString,QCheckBox*> styleChecks;
+    QVector<QDoubleSpinBox*> safeInputs,paddingInputs;
+    QMap<QString,QCheckBox*> imageFormats,videoFormats;
+    QVector<RecolorPreset> presets{{"White",Qt::white,0,1,false},{"Black",Qt::black,0,1,false}};
+    Adjustments layerStyle;
+    QMap<QString,QVector<ClipRange>> clips;
+    QMap<QString,QPair<double,double>> draftRanges;
+    QMap<QString,QString> inputAliases;
+    QFutureWatcher<ExportResult> exportWatcher;
+    QFutureWatcher<LoadedMedia> loadWatcher;
+    std::shared_ptr<std::atomic_bool> cancelFlag;
+    QProcess *recorder=nullptr;
+    QMediaPlayer *player=nullptr;QAudioOutput *audio=nullptr;QVideoSink *sink=nullptr;TimelineWidget *timeline=nullptr;
+    QDialog *exportDialog=nullptr;QProgressBar *exportProgress=nullptr;QLabel *exportStatus=nullptr;QPlainTextEdit *exportLog=nullptr;QPushButton *exportCancel=nullptr,*exportDone=nullptr,*exportOpen=nullptr;
+    QPoint dragOffset;
+    bool rangePlayback=false;
+    bool changing=false,loading=false,recordMode=false,closing=false,updatingClips=false;
+    double lockedRatio=1;
+    QStringList logs;QTemporaryDir captures;
+    quint64 loadGeneration=0;
+    QMovie *gif=nullptr;QVector<int> gifTimes;
+    QDialog *fullscreen=nullptr;PreviewWidget *fullPreview=nullptr;
+    QCheckBox *followSource=nullptr,*targetEnabled=nullptr,*allowSmaller=nullptr,*stripMetadata=nullptr,*copyCapture=nullptr;
+    QComboBox *marginUnits=nullptr,*sizingMode=nullptr,*targetUnit=nullptr,*encodeSpeed=nullptr,*pngLevel=nullptr,*paletteSize=nullptr,*captureKind=nullptr,*captureScreen=nullptr,*captureAudio=nullptr;
+    QSpinBox *fpsLimit=nullptr,*audioRate=nullptr,*captureDelay=nullptr,*captureFps=nullptr,*captureLimit=nullptr;
+    QDoubleSpinBox *targetSize=nullptr;
+    QMap<QString,QCheckBox*> audioFormats;
+    QMap<QString,QCheckBox*> textureMaps;
+    QMap<QString,QSlider*> textureMapSliders;
+    QComboBox *textureMapPreview=nullptr,*textureLighting=nullptr,*textureFormat=nullptr;
+    QVector<QDoubleSpinBox*> textureBgw;
+    QWidget *imageFormatRow=nullptr,*videoFormatRow=nullptr,*audioFormatRow=nullptr;
+    QRect lastCaptureArea;
+    bool pixelMargins=false,discardRecording=false,capturePending=false;
+    void buildPowerFeatures();void clearMedia();void mediaContext();void routeMode(int);
+    void rotateMedia(int);void changeMarginUnits(int);QMarginsF normalizedMargins(const QVector<QDoubleSpinBox*>&) const;
+    void seekMedia(double);void deliverFrame(const QImage &);void fullScreenPlayer();
+    void ingestCapture(QImage);void annotateMedia();void configureCapture();
+    void buildUi();
+    QWidget *makeAdjustTab(const QStringList &,const QStringList &,const QVector<int>&,const QVector<int>&,const QVector<int>&);
+    QWidget *framePanel();QWidget *colorPanel();QWidget *stylesPanel();QWidget *clipsPanel();QWidget *outputPanel();QWidget *texturePanel();
+    Adjustments adjustments() const;
+    void refresh();void chooseFiles();void manageBatch();void selectFile(const QString &);void navigate(int);
+    void setDimensions(int,int);void aspectChanged();void updateBatchLabel();void addSize(int=0);
+    void exportFiles();void settingsDialog();void editPreset(int);void startCapture();void startRecording(QRect);
+    void togglePlayback();void stopPlayback();void showError(const QString &);void showLog();
+    void syncRange(bool save=true);void updateClipTable();void addClip();void showExportWindow();
+};

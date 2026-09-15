@@ -1,0 +1,296 @@
+#include "MainWindow.h"
+#include "ScreenCaptureManager.h"
+#include "GradientSlider.h"
+#include "PsdImporter.h"
+#include <QVideoFrame>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <dwmapi.h>
+#endif
+namespace {
+QPushButton *button(const QString &text,QLayout *layout=nullptr,const QString &color={}){auto *b=new QPushButton(text);b->setCursor(Qt::PointingHandCursor);if(!color.isEmpty())b->setProperty("tone",color);if(layout)layout->addWidget(b);return b;}
+QLabel *label(const QString &text,const QString &name={}){auto *l=new QLabel(text);if(!name.isEmpty())l->setObjectName(name);return l;}
+QHBoxLayout *row(QVBoxLayout *parent,int spacing=8){auto *r=new QHBoxLayout;r->setSpacing(spacing);parent->addLayout(r);return r;}
+QSpinBox *number(int value,int max=8192){auto *n=new QSpinBox;n->setRange(1,max);n->setValue(value);n->setButtonSymbols(QAbstractSpinBox::NoButtons);return n;}
+QDoubleSpinBox *seconds(){auto *n=new QDoubleSpinBox;n->setRange(0,86400);n->setDecimals(3);n->setSingleStep(.1);n->setSuffix(" s");n->setButtonSymbols(QAbstractSpinBox::NoButtons);return n;}
+QWidget *scrolled(QWidget *content){auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setFrameShape(QFrame::NoFrame);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setWidget(content);return scroll;}
+QString clockText(double seconds){int m=int(seconds)/60;return QString("%1:%2").arg(m,2,10,QChar('0')).arg(seconds-m*60,6,'f',3,QChar('0'));}
+QString appStyle(){return R"(
+QWidget {color:#e6e8ef;font-family:'Segoe UI';font-size:12px;}
+QWidget#shell {background:#101116;border:1px solid #343641;border-radius:12px;}
+QDialog {background:#17191f;}
+QLabel {background:transparent;border:none;}
+QLabel#muted {color:#969aa9;font-size:10px;}
+QLabel#section {color:#bec8dc;font-size:10px;font-weight:600;letter-spacing:1px;}
+QPushButton {background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #323847,stop:1 #202430);border:1px solid #65718b;border-radius:6px;padding:5px 9px;min-height:18px;}
+QPushButton:hover {border:1px solid #89baff;background:#334965;}
+QPushButton:pressed,QPushButton:checked {background:#294d7c;border-color:#3d91fb;}
+QPushButton:disabled {color:#697081;background:#232630;border-color:#3b414e;}
+QPushButton[tone="blue"] {background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #3d91fb,stop:1 #285aa6);border:1px solid #83baff;color:white;}
+QPushButton[tone="pink"] {background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #ca267a,stop:1 #821b54);border:1px solid #f27db8;color:white;}
+QPushButton[tone="gold"] {background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #fac665,stop:1 #b48332);border:1px solid #ffdda0;color:#201a12;}
+QLineEdit,QSpinBox,QDoubleSpinBox,QComboBox {background:#101218;border:1px solid #454d61;border-radius:5px;padding:4px 6px;min-height:18px;selection-background-color:#3d91fb;}
+QComboBox::drop-down {border:none;width:16px;}
+QComboBox QAbstractItemView {background:#222836;selection-background-color:#345f94;}
+QSpinBox:focus,QDoubleSpinBox:focus,QComboBox:focus {border-color:#3d91fb;}
+QCheckBox {spacing:6px;}
+QCheckBox::indicator,QListView::indicator,QTreeView::indicator,QTableView::indicator {width:16px;height:16px;border:1px solid #69748a;border-radius:4px;background:#141824;}
+QCheckBox::indicator:checked,QListView::indicator:checked,QTreeView::indicator:checked,QTableView::indicator:checked {background:#3d91fb;border:1px solid #a1cbff;image:url(:/brand/check.svg);}
+QCheckBox::indicator:disabled {background:#292c35;border-color:#454a57;}
+QTabWidget::pane {border:1px solid #3e4657;background:#181b23;border-radius:6px;}
+QTabBar::tab {background:#202530;color:#acb5c8;padding:8px 12px;border-bottom:2px solid #353d4e;}
+QTabBar::tab:selected {color:#edf5ff;border-bottom:2px solid #3d91fb;background:#2a3b55;}
+QScrollArea,QWidget#content {border:none;background:transparent;}
+QScrollArea>QWidget>QWidget {background:#181b23;}
+QScrollBar:vertical {width:6px;background:#191c24;margin:0;}
+QScrollBar::handle:vertical {background:#515c76;min-height:24px;border-radius:3px;}
+QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;}
+QListWidget,QTreeWidget,QTableWidget,QPlainTextEdit {background:#11151d;border:1px solid #3e475b;border-radius:5px;gridline-color:#333d50;outline:none;}
+QListWidget::item {padding:4px;margin:2px;border-radius:4px;}
+QListWidget::item:selected,QTreeWidget::item:selected,QTableWidget::item:selected {background:#29466c;}
+QHeaderView::section {background:#242e40;color:#b9c9e3;border:none;padding:4px;}
+QProgressBar {background:#131824;border:1px solid #414e66;border-radius:5px;text-align:center;min-height:15px;}
+QProgressBar::chunk {background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #57dd7b,stop:1 #3d91fb);border-radius:4px;}
+QToolTip {background:#222a39;color:#edf2fa;border:1px solid #3d91fb;padding:6px;}
+)";}
+}
+MainWindow::MainWindow(QWidget *parent):QWidget(parent){
+    setWindowTitle("Aspectra 2");setWindowIcon(QIcon(":/brand/logo.png"));setWindowFlags(Qt::Window|Qt::FramelessWindowHint|Qt::WindowMinimizeButtonHint);setAttribute(Qt::WA_TranslucentBackground);setFixedSize(524,980);setAcceptDrops(true);
+    buildUi();setStyleSheet(appStyle());auto available=QGuiApplication::primaryScreen()->availableGeometry();move(available.center()-rect().center());
+#ifdef Q_OS_WIN
+    int preference=2;DwmSetWindowAttribute(reinterpret_cast<HWND>(winId()),33,&preference,sizeof(preference));MARGINS margins{1,1,1,1};DwmExtendFrameIntoClientArea(reinterpret_cast<HWND>(winId()),&margins);
+#endif
+    player=new QMediaPlayer(this);audio=new QAudioOutput(this);sink=new QVideoSink(this);player->setAudioOutput(audio);player->setVideoSink(sink);audio->setVolume(.7);
+    connect(sink,&QVideoSink::videoFrameChanged,this,[this](const QVideoFrame &frame){auto image=frame.toImage();if(!image.isNull()){original=image;preview->setFrame(image);}});
+    connect(player,&QMediaPlayer::positionChanged,this,[this](qint64 ms){timeline->setPosition(ms/1000.);timeLabel->setText(clockText(ms/1000.)+" / "+clockText(media.duration));});
+    connect(player,&QMediaPlayer::durationChanged,this,[this](qint64 ms){if(ms<=0)return;media.duration=ms/1000.;timeline->setDuration(media.duration);inMarker->setMaximum(media.duration);outMarker->setMaximum(media.duration);if(!draftRanges.contains(currentFile)){QSignalBlocker a(inMarker),b(outMarker);inMarker->setValue(0);outMarker->setValue(media.duration);syncRange(false);}});
+    connect(player,&QMediaPlayer::playbackStateChanged,this,[this](QMediaPlayer::PlaybackState s){playButton->setText(s==QMediaPlayer::PlayingState?"Ⅱ Pause":"▶ Play");});
+    connect(player,&QMediaPlayer::errorOccurred,this,[this](QMediaPlayer::Error,const QString &message){status->setText("Player: "+message.left(55));logs<<message;});
+    connect(&loadWatcher,&QFutureWatcher<LoadedMedia>::finished,this,[this]{loading=false;auto loaded=loadWatcher.result();if(!loaded.error.isEmpty()){showError(loaded.error);return;}original=loaded.image;media=loaded.info;
+        if(ratio->currentIndex()==0){lockedRatio=double(original.width())/original.height();setDimensions(widthInput->value(),qRound(widthInput->value()/lockedRatio));}
+        preview->setFrame(original);refresh();status->setText("Ready · all adjustments are live");thumbnail->setPixmap(QPixmap::fromImage(original).scaled(20,20,Qt::KeepAspectRatio,Qt::SmoothTransformation));info->setText(QString("%1 · %2×%3").arg(QFileInfo(inputAliases.value(currentFile,currentFile)).suffix().toUpper()).arg(media.size.width()).arg(media.size.height()));
+        if(VideoProcessor::isVideo(currentFile)){timeline->setDuration(media.duration);QSignalBlocker a(inMarker),b(outMarker);inMarker->setMaximum(media.duration);outMarker->setMaximum(media.duration);auto range=draftRanges.value(currentFile,{0,media.duration});inMarker->setValue(range.first);outMarker->setValue(range.second);syncRange(false);player->setSource(QUrl::fromLocalFile(currentFile));player->setPosition(qRound64(range.first*1000));}
+        updateClipTable();
+    });
+    connect(&exportWatcher,&QFutureWatcher<ExportResult>::finished,this,[this]{auto result=exportWatcher.result();lastFolder=result.folder;logs+=result.log;exportButton->setEnabled(true);exportCancel->hide();exportDone->setEnabled(true);exportOpen->setEnabled(!lastFolder.isEmpty());exportLog->setPlainText(result.log.join('\n'));
+        QString message=result.error.isEmpty()?QString("Complete · %1 outputs saved").arg(result.written):result.cancelled?"Cancelled · completed files kept":"Export failed: "+result.error;exportStatus->setText(message);status->setText(message.left(70));if(closing)close();});
+}
+MainWindow::~MainWindow(){if(cancelFlag)*cancelFlag=true;exportWatcher.waitForFinished();loadWatcher.waitForFinished();if(player)player->stop();if(recorder){recorder->write("q\n");recorder->waitForFinished(5000);if(recorder->state()!=QProcess::NotRunning)recorder->kill();}}
+void MainWindow::buildUi(){
+    auto *root=new QVBoxLayout(this);root->setContentsMargins(1,1,1,1);auto *shell=new QWidget;shell->setObjectName("shell");root->addWidget(shell);auto *layout=new QVBoxLayout(shell);layout->setContentsMargins(16,10,16,10);layout->setSpacing(7);
+    auto *header=row(layout,6);auto *settings=button("⚙",header);settings->setFixedWidth(34);connect(settings,&QPushButton::clicked,this,&MainWindow::settingsDialog);header->addStretch();auto *wordmark=new QLabel;wordmark->setPixmap(QPixmap(":/brand/wordmark.png").scaled(254,54,Qt::KeepAspectRatio,Qt::SmoothTransformation));wordmark->setAlignment(Qt::AlignCenter);header->addWidget(wordmark);header->addStretch();auto *min=button("—",header);min->setFixedWidth(28);connect(min,&QPushButton::clicked,this,&QWidget::showMinimized);auto *close=button("×",header,"pink");close->setFixedWidth(28);connect(close,&QPushButton::clicked,this,&QWidget::close);
+    auto *toolbar=row(layout,6);auto *import=button("+ Import",toolbar,"blue");connect(import,&QPushButton::clicked,this,&MainWindow::chooseFiles);modes=new QButtonGroup(this);int id=0;for(const auto &name:QStringList{"Image","Video","Capture"}){auto *b=button(name,toolbar);b->setCheckable(true);modes->addButton(b,id++);}modes->button(0)->setChecked(true);auto *batch=button("Batch…",toolbar);connect(batch,&QPushButton::clicked,this,&MainWindow::manageBatch);
+    connect(modes,&QButtonGroup::idClicked,this,[this](int i){captureRow->setVisible(i==2);if(i==2)stopPlayback();});
+    auto *nav=row(layout,5);auto *previous=button("‹",nav);previous->setFixedWidth(29);connect(previous,&QPushButton::clicked,this,[this]{navigate(-1);});navigation=new QComboBox;navigation->setMinimumWidth(0);nav->addWidget(navigation,1);connect(navigation,&QComboBox::activated,this,[this](int i){if(i>=0&&i<this->batch.files.size())selectFile(this->batch.files[i]);});auto *next=button("›",nav);next->setFixedWidth(29);connect(next,&QPushButton::clicked,this,[this]{navigate(1);});navLabel=label("0 / 0","muted");nav->addWidget(navLabel);
+    filename=label("PREVIEW · Import images, PSDs or videos","section");layout->addWidget(filename);
+    captureRow=new QWidget;auto *cap=new QHBoxLayout(captureRow);cap->setContentsMargins(0,0,0,0);captureButton=button("Capture area",cap,"blue");auto *capMode=new QComboBox;capMode->addItems({"Capture image","Record video"});cap->addWidget(capMode);connect(capMode,&QComboBox::currentIndexChanged,this,[this](int i){recordMode=i==1;});connect(captureButton,&QPushButton::clicked,this,&MainWindow::startCapture);layout->addWidget(captureRow);captureRow->hide();
+    preview=new PreviewWidget;layout->addWidget(preview);
+    connect(preview,&PreviewWidget::marginsDragged,this,[this](QMarginsF safe,QMarginsF padding){double sv[]{safe.left(),safe.top(),safe.right(),safe.bottom()},pv[]{padding.left(),padding.top(),padding.right(),padding.bottom()};for(int i=0;i<4;++i){QSignalBlocker a(safeInputs[i]),b(paddingInputs[i]);safeInputs[i]->setValue(sv[i]*100);paddingInputs[i]->setValue(pv[i]*100);}refresh();});
+    auto *zoomRow=row(layout,7);zoomRow->addWidget(label("CROP / ZOOM","muted"));zoom=new GradientSlider;zoom->setRange(100,400);zoom->setValue(100);zoomRow->addWidget(zoom,1);zoomValue=label("100%");zoomValue->setFixedWidth(35);zoomRow->addWidget(zoomValue);connect(zoom,&QSlider::valueChanged,this,&MainWindow::refresh);
+    videoRow=new QWidget;auto *vl=new QVBoxLayout(videoRow);vl->setContentsMargins(0,0,0,0);vl->setSpacing(2);auto *playRow=row(vl,6);playButton=button("▶ Play",playRow,"blue");connect(playButton,&QPushButton::clicked,this,&MainWindow::togglePlayback);timeLabel=label("00:00.000 / 00:00.000","muted");playRow->addWidget(timeLabel,1);auto *mute=new QCheckBox("Mute");playRow->addWidget(mute);connect(mute,&QCheckBox::toggled,this,[this](bool value){audio->setMuted(value);});timeline=new TimelineWidget;vl->addWidget(timeline);connect(timeline,&TimelineWidget::seek,this,[this](double time){player->setPosition(qRound64(time*1000));});connect(timeline,&TimelineWidget::rangeEdited,this,[this](double a,double b){QSignalBlocker x(inMarker),y(outMarker);inMarker->setValue(a);outMarker->setValue(b);syncRange();});layout->addWidget(videoRow);videoRow->hide();
+    tabs=new QTabWidget;tabs->addTab(scrolled(framePanel()),"Frame");tabs->addTab(colorPanel(),"Color");tabs->addTab(scrolled(stylesPanel()),"Layer Styles");tabs->addTab(clipsPanel(),"Clips");tabs->addTab(scrolled(texturePanel()),"Texture");tabs->addTab(scrolled(outputPanel()),"Output");connect(tabs,&QTabWidget::currentChanged,this,[this]{refresh();});layout->addWidget(tabs,1);
+    auto *exportRow=row(layout);batchLabel=label("0 files · output settings in Output","muted");exportRow->addWidget(batchLabel,1);exportButton=button("Export…",exportRow,"blue");exportButton->setMinimumWidth(145);connect(exportButton,&QPushButton::clicked,this,&MainWindow::exportFiles);
+    auto *statusRow=row(layout,5);status=label("Ready · all adjustments are live","muted");statusRow->addWidget(status,1);auto *log=button("Log",statusRow);connect(log,&QPushButton::clicked,this,&MainWindow::showLog);thumbnail=new QLabel;thumbnail->setFixedSize(20,20);statusRow->addWidget(thumbnail);info=label("No media","muted");statusRow->addWidget(info);
+}
+QWidget *MainWindow::framePanel(){
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setContentsMargins(12,12,12,12);v->setSpacing(8);auto *r=row(v);r->addWidget(label("ASPECT & DIMENSIONS","section"));r->addStretch();lock=new QCheckBox("Lock ratio");lock->setChecked(true);r->addWidget(lock);ratio=new QComboBox;ratio->addItems({"Source","1:1","16:9","9:16","4:3","Custom…"});ratio->setCurrentIndex(1);r->addWidget(ratio);connect(ratio,&QComboBox::currentIndexChanged,this,&MainWindow::aspectChanged);connect(lock,&QCheckBox::toggled,this,[this](bool on){if(on)lockedRatio=double(widthInput->value())/heightInput->value();});
+    r=row(v);r->addWidget(label("Width"));widthInput=number(512);r->addWidget(widthInput);r->addWidget(label("×"));heightInput=number(512);r->addWidget(heightInput);r->addWidget(label("px","muted"));
+    connect(widthInput,&QSpinBox::valueChanged,this,[this](int n){if(changing)return;changing=true;if(lock->isChecked())heightInput->setValue(qRound(n/lockedRatio));changing=false;refresh();});connect(heightInput,&QSpinBox::valueChanged,this,[this](int n){if(changing)return;changing=true;if(lock->isChecked())widthInput->setValue(qRound(n*lockedRatio));changing=false;refresh();});
+    r=row(v,5);for(int n:{128,256,512,1024,2048}){auto *b=button(QString::number(n),r);connect(b,&QPushButton::clicked,this,[this,n]{setDimensions(n,lock->isChecked()?qRound(n/lockedRatio):n);});}
+    r=row(v);r->addWidget(label("SAFE REGION & PADDING","section"));r->addStretch();guides=new QCheckBox("Show guides");guides->setChecked(true);r->addWidget(guides);connect(guides,&QCheckBox::toggled,this,&MainWindow::refresh);
+    auto *grid=new QGridLayout;v->addLayout(grid);grid->setHorizontalSpacing(5);QStringList sides{"Left","Top","Right","Bottom"};for(int i=0;i<4;++i)grid->addWidget(label(sides[i],"muted"),0,i+1);
+    for(int kind=0;kind<2;++kind){grid->addWidget(label(kind?"Padding":"Safe margin"),kind+1,0);for(int i=0;i<4;++i){auto *n=new QDoubleSpinBox;n->setRange(0,45);n->setDecimals(1);n->setSuffix("%");n->setButtonSymbols(QAbstractSpinBox::NoButtons);n->setValue(kind?0:10);grid->addWidget(n,kind+1,i+1);(kind?paddingInputs:safeInputs)<<n;connect(n,&QDoubleSpinBox::valueChanged,this,&MainWindow::refresh);}}
+    auto *note=label("Green = safe · Red = outside safe. Drag green edges to adjust.\nAlt-drag padding edges. Padding exports; guide markers do not.","muted");note->setWordWrap(true);v->addWidget(note);v->addStretch();return page;
+}
+QWidget *MainWindow::makeAdjustTab(const QStringList &names,const QStringList &keys,const QVector<int>&minimum,const QVector<int>&maximum,const QVector<int>&values){
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setContentsMargins(12,10,12,10);v->setSpacing(7);
+    for(int i=0;i<names.size();++i){auto *r=row(v,6);auto *name=label(names[i]);name->setFixedWidth(104);r->addWidget(name);auto *slider=new GradientSlider;slider->setRange(minimum[i],maximum[i]);slider->setValue(values[i]);r->addWidget(slider,1);sliders[keys[i]]=slider;auto *n=number(values[i],maximum[i]);n->setMinimum(minimum[i]);n->setValue(values[i]);n->setFixedWidth(52);r->addWidget(n);connect(n,&QSpinBox::valueChanged,slider,&QSlider::setValue);connect(slider,&QSlider::valueChanged,n,&QSpinBox::setValue);connect(slider,&QSlider::valueChanged,this,&MainWindow::refresh);}
+    v->addStretch();return scrolled(page);
+}
+QWidget *MainWindow::colorPanel(){
+    auto *panel=new QTabWidget;panel->addTab(makeAdjustTab({"Hue °","Saturation %","Brightness %","Contrast %","Exposure ×100"},{"hue","saturation","brightness","contrast","exposure"},{-180,0,-100,0,-400},{180,200,100,200,400},{0,100,0,100,0}),"Basic");
+    panel->addTab(makeAdjustTab({"Black point","Gamma ×100","White point"},{"blacks","gamma","whites"},{0,10,1},{254,300,255},{0,100,255}),"Levels");
+    panel->addTab(makeAdjustTab({"Cyan ↔ Red","Magenta ↔ Green","Yellow ↔ Blue"},{"red","green","blue"},{-100,-100,-100},{100,100,100},{0,0,0}),"Balance");
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);flat=new QCheckBox("Flat color / posterize");v->addWidget(flat);connect(flat,&QCheckBox::toggled,this,&MainWindow::refresh);
+    for(int i=0;i<2;++i){auto *r=row(v);auto *enabled=new QCheckBox(presets[i].name+" export variant");r->addWidget(enabled);r->addStretch();auto *edit=button("Edit…",r);connect(enabled,&QCheckBox::toggled,this,[this,i](bool on){presets[i].enabled=on;refresh();});connect(edit,&QPushButton::clicked,this,[this,i]{editPreset(i);});}
+    auto *r=row(v);r->addWidget(label("Preview variant"));previewVariant=new QComboBox;previewVariant->addItems({"Original","White","Black"});r->addWidget(previewVariant);connect(previewVariant,&QComboBox::currentIndexChanged,this,&MainWindow::refresh);v->addWidget(label("Original + checked variants are exported. Raster output.","muted"));v->addStretch();panel->addTab(page,"Recolor");return panel;
+}
+QWidget *MainWindow::stylesPanel(){
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setSpacing(7);v->addWidget(label("LIVE LAYER STYLES · APPLIED TO OUTPUT","section"));auto *r=row(v);r->addWidget(label("Blend mode"));auto *blend=new QComboBox;blend->addItems({"Normal","Multiply","Screen","Overlay"});r->addWidget(blend,1);connect(blend,&QComboBox::currentIndexChanged,this,[this](int mode){layerStyle.blendMode=mode;refresh();});
+    auto numeric=[&](QString name,double minimum,double maximum,double value,std::function<void(double)> change){auto *line=row(v);line->addWidget(label(name));auto *n=new QDoubleSpinBox;n->setRange(minimum,maximum);n->setValue(value);n->setSuffix(" %");n->setSingleStep(1);line->addWidget(n);connect(n,&QDoubleSpinBox::valueChanged,this,[this,change](double value){change(value/100.);refresh();});};
+    numeric("Layer opacity",0,100,100,[this](double v){layerStyle.opacity=v;});numeric("Effect opacity",0,100,75,[this](double v){layerStyle.effectOpacity=v;});
+    const QStringList keys{"overlay","gradient","stroke","shadow","glow","innerShadow","bevel"},names{"Color overlay","Gradient overlay","Outside stroke","Drop shadow","Outer glow","Inner shadow","Bevel / emboss"};
+    for(int i=0;i<keys.size();++i){auto *line=row(v);auto *check=new QCheckBox(names[i]);styleChecks[keys[i]]=check;line->addWidget(check,1);connect(check,&QCheckBox::toggled,this,&MainWindow::refresh);
+        if(i<5){auto *color=button(i==1?"End color…":"Color…",line);connect(color,&QPushButton::clicked,this,[this,i]{QColor *target=i==0?&layerStyle.overlayColor:i==1?&layerStyle.gradientEnd:i==2?&layerStyle.strokeColor:i==3?&layerStyle.shadowColor:&layerStyle.glowColor;QColor chosen=QColorDialog::getColor(*target,this);if(chosen.isValid()){*target=chosen;refresh();}});}}
+    numeric("Stroke width",.1,15,1,[this](double v){layerStyle.strokeSize=v;});numeric("Shadow softness",.1,20,2.5,[this](double v){layerStyle.shadowSize=v;});numeric("Shadow distance",0,20,2.5,[this](double v){layerStyle.shadowDistance=v;});numeric("Glow radius",.1,20,2.5,[this](double v){layerStyle.glowSize=v;});numeric("Bevel size",.1,10,1,[this](double v){layerStyle.bevelSize=v;});v->addWidget(label("Sizes are relative to the canvas. Add padding for outside effects.\nBlend mode applies to color / gradient overlays.","muted"));return page;
+}
+QWidget *MainWindow::clipsPanel(){
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setContentsMargins(10,10,10,10);v->setSpacing(5);v->addWidget(label("IN / OUT MARKERS · VIDEO & GIF","section"));auto *r=row(v,5);inMarker=seconds();outMarker=seconds();outMarker->setValue(1);r->addWidget(label("In"));r->addWidget(inMarker,1);auto *markIn=button("Set In",r,"gold");r->addWidget(label("Out"));r->addWidget(outMarker,1);auto *markOut=button("Set Out",r,"pink");
+    connect(inMarker,&QDoubleSpinBox::valueChanged,this,[this]{syncRange();});connect(outMarker,&QDoubleSpinBox::valueChanged,this,[this]{syncRange();});connect(markIn,&QPushButton::clicked,this,[this]{inMarker->setValue(player->position()/1000.);});connect(markOut,&QPushButton::clicked,this,[this]{outMarker->setValue(player->position()/1000.);});
+    r=row(v,5);auto *add=button("+ Add clip range",r,"blue");connect(add,&QPushButton::clicked,this,&MainWindow::addClip);auto *update=button("Update selected",r);connect(update,&QPushButton::clicked,this,[this]{int i=clipTable->currentRow();if(i<0||i>=clips[currentFile].size())return;if(outMarker->value()<=inMarker->value()){showError("Out must be after In.");return;}clips[currentFile][i].start=inMarker->value();clips[currentFile][i].end=outMarker->value();updateClipTable();});auto *remove=button("Remove",r,"pink");connect(remove,&QPushButton::clicked,this,[this]{int i=clipTable->currentRow();if(i>=0&&i<clips[currentFile].size()){clips[currentFile].removeAt(i);if(clips[currentFile].isEmpty())clips.remove(currentFile);updateClipTable();}});
+    clipTable=new QTableWidget(0,4);clipTable->setHorizontalHeaderLabels({"On","Name","In (s)","Out (s)"});clipTable->verticalHeader()->hide();clipTable->setSelectionBehavior(QAbstractItemView::SelectRows);clipTable->setSelectionMode(QAbstractItemView::SingleSelection);clipTable->setColumnWidth(0,32);clipTable->horizontalHeader()->setSectionResizeMode(1,QHeaderView::Stretch);clipTable->setColumnWidth(2,80);clipTable->setColumnWidth(3,80);v->addWidget(clipTable,1);
+    connect(clipTable,&QTableWidget::cellChanged,this,[this](int r,int c){if(updatingClips||r>=clips[currentFile].size())return;auto &clip=clips[currentFile][r];if(c==0)clip.enabled=clipTable->item(r,0)->checkState()==Qt::Checked;else if(c==1)clip.name=clipTable->item(r,1)->text();timeline->setClips(clips.value(currentFile));});
+    connect(clipTable,&QTableWidget::cellClicked,this,[this](int r,int){if(r>=clips[currentFile].size())return;auto clip=clips[currentFile][r];{QSignalBlocker a(inMarker),b(outMarker);inMarker->setValue(clip.start);outMarker->setValue(clip.end);}syncRange();player->setPosition(qRound64(clip.start*1000));});
+    auto *note=label("Each checked range becomes a separate clip in every checked format.\nWith no list, export uses the In / Out markers. Ranges belong to this file.","muted");note->setWordWrap(true);v->addWidget(note);return page;
+}
+QWidget *MainWindow::outputPanel(){
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setSpacing(8);auto *r=row(v);r->addWidget(label("OUTPUT WIDTHS · HEIGHT FOLLOWS FRAME","section"));r->addStretch();auto *add=button("+ Size",r,"gold");connect(add,&QPushButton::clicked,this,[this]{addSize();});sizes=new QListWidget;sizes->setFlow(QListView::LeftToRight);sizes->setWrapping(false);sizes->setFixedHeight(42);v->addWidget(sizes);for(int n:{128,256,512})addSize(n);
+    v->addWidget(label("EXPORT SEVERAL FORMATS AT ONCE","section"));r=row(v);r->addWidget(label("Images","muted"));for(const auto &format:QStringList{"PNG","JPG","BMP"}){auto *check=new QCheckBox(format);check->setChecked(format=="PNG");imageFormats[format]=check;r->addWidget(check);}r->addStretch();r=row(v);r->addWidget(label("Videos","muted"));for(const auto &format:QStringList{"MP4","MOV","WEBM","GIF"}){auto *check=new QCheckBox(format);check->setChecked(format=="MP4");videoFormats[format]=check;r->addWidget(check);}r->addStretch();
+    r=row(v);r->addWidget(label("JPEG quality"));quality=number(90,100);r->addWidget(quality);r->addWidget(label("Video CRF"));crf=number(23,51);crf->setMinimum(0);r->addWidget(crf);
+    v->addWidget(label("ARCHIVES · OPTIONAL, BESIDE OUTPUT FOLDER","section"));r=row(v);zip=new QCheckBox("ZIP");rar=new QCheckBox("RAR");rar->setEnabled(!VideoProcessor::findRar().isEmpty());rar->setToolTip("RAR requires Rar.exe, configured in Settings.");r->addWidget(zip);r->addWidget(rar);archiveMode=new QComboBox;archiveMode->addItems({"Fast compression","Store only","Maximum compression"});r->addWidget(archiveMode,1);
+    r=row(v);r->addWidget(label("Parallel jobs"));workerCount=new QComboBox;workerCount->addItems({"1","2","3","4"});workerCount->setCurrentIndex(1);r->addWidget(workerCount);auto *paths=button("FFmpeg / RAR paths…",r);connect(paths,&QPushButton::clicked,this,&MainWindow::settingsDialog);
+    auto *note=label("Folders: output/128/ · output/256/ · output/512/\nClips keep separate names. Archives are off by default for speed.","muted");note->setWordWrap(true);v->addWidget(note);return page;
+}
+
+static double textureLevel(QRgb pixel,double black,double white,double gamma){
+    double value=qBound(0.,(qGray(pixel)-black)/qMax(1.,white-black),1.);
+    return std::pow(value,1./qMax(.1,gamma));
+}
+static QImage renderTextureMap(const QImage &source,const QString &map,const QMap<QString,int> &strengths,double black,double white,double gamma){
+    if(source.isNull())return {};
+    const QImage input=source.convertToFormat(QImage::Format_RGBA8888);
+    const int width=input.width(),height=input.height();
+    const double strength=strengths.value(map,100)/100.;
+    auto toneAt=[&](int x,int y){return textureLevel(input.pixel(qBound(0,x,width-1),qBound(0,y,height-1)),black,white,gamma);};
+    QImage output(input.size(),QImage::Format_RGBA8888);
+    for(int y=0;y<height;++y)for(int x=0;x<width;++x){
+        const QRgb pixel=input.pixel(x,y); const int alpha=qAlpha(pixel);
+        const double tone=toneAt(x,y), left=toneAt(x-1,y), right=toneAt(x+1,y), up=toneAt(x,y-1), down=toneAt(x,y+1);
+        const int gray=qBound(0,qRound(tone*strength*255),255);
+        QRgb result=qRgba(gray,gray,gray,alpha);
+        if(map=="Base Color"){
+            const double lift=.65+.35*strength;
+            result=qRgba(qBound(0,qRound(qRed(pixel)*lift),255),qBound(0,qRound(qGreen(pixel)*lift),255),qBound(0,qRound(qBlue(pixel)*lift),255),alpha);
+        }else if(map=="Normal"){
+            const double scale=2.2*strength,dx=(right-left)*scale,dy=(down-up)*scale,z=1.; const double length=std::sqrt(dx*dx+dy*dy+z*z);
+            result=qRgba(qBound(0,qRound((.5-dx/(2*length))*255),255),qBound(0,qRound((.5-dy/(2*length))*255),255),qBound(0,qRound((.5+z/(2*length))*255),255),alpha);
+        }else if(map=="Ambient Occlusion"||map=="Cavity"){
+            const double detail=qBound(0.,1.-qAbs((left+right+up+down)/4.-tone)*6.*strength,1.); int c=qRound(detail*255);result=qRgba(c,c,c,alpha);
+        }else if(map=="Curvature"){
+            int c=qBound(0,qRound((.5+((left+right+up+down)/4.-tone)*8.*strength)*255),255);result=qRgba(c,c,c,alpha);
+        }else if(map=="Emission"){
+            const double glow=std::pow(tone,qMax(.15,1.8/strength));result=qRgba(qBound(0,qRound(qRed(pixel)*glow),255),qBound(0,qRound(qGreen(pixel)*glow),255),qBound(0,qRound(qBlue(pixel)*glow),255),alpha);
+        }else if(map=="Opacity"){
+            result=qRgba(gray,gray,gray,qBound(0,qRound(tone*strength*255),255));
+        }else if(map=="Glossiness"){
+            int c=qBound(0,qRound((1.-tone)*strength*255),255);result=qRgba(c,c,c,alpha);
+        }else if(map=="Metallic"||map=="Specular"||map=="Clearcoat"||map=="Sheen"||map=="Anisotropy"||map=="Transmission"||map=="Subsurface"){
+            int c=qBound(0,qRound(tone*strength*255),255);result=qRgba(c,c,c,alpha);
+        }else if(map=="Clearcoat Roughness"||map=="Sheen Roughness"||map=="Roughness"||map=="Height / Displacement"){
+            result=qRgba(gray,gray,gray,alpha);
+        }else if(map=="ORM"||map=="MRA"||map=="RMA"){
+            const int ao=qBound(0,qRound((1.-qAbs((left+right+up+down)/4.-tone)*6.)*255),255),rough=qBound(0,qRound(tone*255),255),metal=qBound(0,qRound(tone*strength*255),255);
+            result=map=="ORM"?qRgba(ao,rough,metal,alpha):map=="MRA"?qRgba(metal,rough,ao,alpha):qRgba(rough,metal,ao,alpha);
+        }
+        output.setPixel(x,y,result);
+    }
+    return output;
+}
+static QImage renderPbrPreview(const QImage &source,const QMap<QString,int> &strengths,double black,double white,double gamma){
+    QImage color=renderTextureMap(source,"Base Color",strengths,black,white,gamma),normal=renderTextureMap(source,"Normal",strengths,black,white,gamma),roughness=renderTextureMap(source,"Roughness",strengths,black,white,gamma);
+    for(int y=0;y<color.height();++y)for(int x=0;x<color.width();++x){QRgb c=color.pixel(x,y),n=normal.pixel(x,y),r=roughness.pixel(x,y);double light=qBound(.2,(qRed(n)/255.-.5)*.55+(qGreen(n)/255.-.5)*-.35+(qBlue(n)/255.-.5)*.8+.45,1.);double shine=(1.-qRed(r)/255.)*.22;color.setPixel(x,y,qRgba(qBound(0,qRound(qRed(c)*(light+shine)),255),qBound(0,qRound(qGreen(c)*(light+shine)),255),qBound(0,qRound(qBlue(c)*(light+shine)),255),qAlpha(c)));}
+    return color;
+}
+static int writeTextureMaps(const QImage &source,const QString &folder,const QString &stem,const QStringList &maps,const QMap<QString,int> &strengths,const QString &format,double black,double white,double gamma,bool materialOnly){
+    QDir().mkpath(folder+"/maps");
+    QString ext=format.toLower();if(ext=="exr")ext="tiff";QStringList paths;int count=0;for(const auto &map:maps){QString safe=map.toLower().replace(QRegularExpression("[^a-z0-9]+"),"_");QString rel="maps/"+stem+"_"+safe+"."+ext;paths<<rel;if(!materialOnly){QImage out=renderTextureMap(source,map,strengths,black,white,gamma);if(out.save(QDir(folder).filePath(rel),ext.toLatin1().constData(),95))++count;}}
+    if(!materialOnly){QFile manifest(QDir(folder).filePath(stem+".pbr"));if(manifest.open(QIODevice::WriteOnly|QIODevice::Text)){QTextStream t(&manifest);t<<"{\n  \"material\": \""<<stem<<"\",\n  \"maps\": [\n";for(int i=0;i<paths.size();++i)t<<"    { \"name\": \""<<maps[i]<<"\", \"path\": \""<<paths[i]<<"\" }"<<(i+1<paths.size()?",":"")<<"\n";t<<"  ]\n}\n";}}
+    return count;
+}
+QWidget *MainWindow::texturePanel(){
+    auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setContentsMargins(12,10,12,12);v->setSpacing(7);
+    v->addWidget(label("PBR TEXTURE MAPS · LIVE PREVIEW","section"));
+    auto *previewRow=new QHBoxLayout;textureMapPreview=new QComboBox;textureMapPreview->addItems({"Full PBR shaded","Base Color","Normal","Roughness","Metallic","Ambient Occlusion","Height / Displacement"});textureLighting=new QComboBox;textureLighting->addItems({"Studio","Outdoor","HDRI","Night"});previewRow->addWidget(textureMapPreview,1);previewRow->addWidget(textureLighting);v->addLayout(previewRow);
+    textureMapPreview->setToolTip("Choose the one generated map to inspect. Moving a map's slider never changes this selection.");textureLighting->setToolTip("Lighting is used only by the Full PBR shaded preview.");
+    textureMaps.clear();textureMapSliders.clear();auto addMaps=[&](const QString &title,const QStringList &names){auto *box=new QGroupBox(title);auto *grid=new QGridLayout(box);grid->setContentsMargins(8,4,8,4);int row=0;for(const auto &name:names){auto *check=new QCheckBox(name);check->setChecked(title=="CORE MAPS"||name=="Height / Displacement");check->setToolTip("Export toggle: checked maps are written by Export all maps. This does not change the preview selection.");auto *slider=new GradientSlider;slider->setRange(0,200);slider->setValue(100);slider->setToolTip("Adjust "+name+" strength for both the live preview and export. 100% is the neutral setting.");auto *value=new QSpinBox;value->setRange(0,200);value->setValue(100);value->setButtonSymbols(QAbstractSpinBox::NoButtons);value->setFixedWidth(45);value->setToolTip(slider->toolTip());textureMaps[name]=check;textureMapSliders[name]=slider;grid->addWidget(check,row,0);grid->addWidget(slider,row,1);grid->addWidget(value,row,2);connect(slider,&QSlider::valueChanged,value,&QSpinBox::setValue);connect(value,qOverload<int>(&QSpinBox::valueChanged),slider,&QSlider::setValue);connect(slider,&QSlider::valueChanged,this,&MainWindow::refresh);++row;}v->addWidget(box);};
+    addMaps("CORE MAPS",{"Base Color","Normal","Roughness","Metallic","Ambient Occlusion"});addMaps("EXTENDED MAPS",{"Height / Displacement","Opacity","Emission","Specular","Glossiness","Cavity","Curvature"});addMaps("ADVANCED MAPS",{"Subsurface","Clearcoat","Clearcoat Roughness","Sheen","Sheen Roughness","Anisotropy","Transmission"});addMaps("PACKED MAPS",{"ORM","MRA","RMA"});
+    v->addWidget(label("GLOBAL BGW LEVELS · LIVE","section"));auto *levels=new QGridLayout;textureBgw.clear();QStringList levelNames={"Black","Gray","White","Gamma"};QStringList levelTips={"Sets the darkest input value mapped to black.","Midpoint reference for level balancing.","Sets the brightest input value mapped to white.","Adjusts midtone response without moving black or white points."};for(int i=0;i<4;++i){levels->addWidget(label(levelNames[i],"muted"),0,i);auto *n=new QDoubleSpinBox;n->setRange(i==3?.1:0,i==3?5:255);n->setValue(i==1?128:i==2?255:i==3?1:0);n->setButtonSymbols(QAbstractSpinBox::NoButtons);n->setToolTip(levelTips[i]);auto *slider=new GradientSlider;slider->setRange(i==3?10:0,i==3?500:255);slider->setValue(i==3?100:n->value());slider->setToolTip(levelTips[i]);textureBgw<<n;levels->addWidget(n,1,i);levels->addWidget(slider,2,i);connect(slider,&QSlider::valueChanged,this,[n,i](int value){QSignalBlocker block(n);n->setValue(i==3?value/100.:value);});connect(n,qOverload<double>(&QDoubleSpinBox::valueChanged),this,[slider,i](double value){QSignalBlocker block(slider);slider->setValue(i==3?qRound(value*100):qRound(value));});connect(n,qOverload<double>(&QDoubleSpinBox::valueChanged),this,&MainWindow::refresh);}v->addLayout(levels);
+    auto *flags=new QHBoxLayout;for(const auto &name:QStringList{"Auto normalize","Histogram","Show clipping"})flags->addWidget(new QCheckBox(name));flags->addStretch();v->addLayout(flags);
+    v->addWidget(label("EXPORT MAPS + MATERIAL","section"));textureFormat=new QComboBox;textureFormat->addItems({"PNG","JPG","EXR","TIFF"});auto *formatRow=new QHBoxLayout;formatRow->addWidget(label("Format","muted"));formatRow->addWidget(textureFormat);auto *exportMaps=button("Export all maps",formatRow,"blue");auto *exportMaterial=button("Export material",formatRow,"gold");v->addLayout(formatRow);auto *archiveRow=new QHBoxLayout;archiveRow->addWidget(new QCheckBox("ZIP"));archiveRow->addWidget(new QCheckBox("RAR"));archiveRow->addWidget(label("Each texture gets its own folder","muted"));archiveRow->addStretch();v->addLayout(archiveRow);auto exportTexture=[this,exportMaps,exportMaterial](bool materialOnly){if(batch.files.isEmpty()){showError("Select an image before exporting textures.");return;}QString root=QFileDialog::getExistingDirectory(this,"Choose texture output folder");if(root.isEmpty())return;QStringList selected;QMap<QString,int> strengths;for(auto it=textureMaps.begin();it!=textureMaps.end();++it){strengths[it.key()]=textureMapSliders.value(it.key())->value();if(it.value()->isChecked())selected<<it.key();}if(selected.isEmpty()){showError("Select at least one texture map.");return;}QDialog queue(this);queue.setWindowTitle("Aspectra · Texture Export");queue.setFixedSize(390,420);auto *qv=new QVBoxLayout(&queue);qv->addWidget(label("TEXTURE EXPORT QUEUE","section"));auto *list=new QListWidget;for(const auto &m:selected)list->addItem("[x] "+m);qv->addWidget(list,1);auto *progress=new QProgressBar;progress->setRange(0,100);progress->setValue(0);qv->addWidget(progress);auto *message=label("Rendering…","muted");qv->addWidget(message);queue.show();QApplication::processEvents();int count=0;for(const auto &path:batch.files){if(VideoProcessor::isVideo(path))continue;QImage source=ImageProcessor::read(path);if(source.isNull())continue;QString stem=QFileInfo(inputAliases.value(path,path)).completeBaseName();count+=writeTextureMaps(source,QDir(root).filePath(stem),stem,selected,strengths,textureFormat->currentText(),textureBgw[0]->value(),textureBgw[2]->value(),textureBgw[3]->value(),materialOnly);}progress->setValue(100);message->setText(QString("Complete · %1 map files written").arg(count));QApplication::processEvents();QThread::msleep(250);queue.close();status->setText(QString("Texture export complete · %1 files").arg(count));};connect(exportMaps,&QPushButton::clicked,this,[exportTexture]{exportTexture(false);});connect(exportMaterial,&QPushButton::clicked,this,[exportTexture]{exportTexture(true);});
+    auto *note=label("Select a map above to view it in the main preview. Every slider is live; safe-zone visibility remains controlled from Frame.","muted");note->setWordWrap(true);v->addWidget(note);connect(textureMapPreview,&QComboBox::currentTextChanged,this,[this](const QString &map){status->setText("Texture preview · "+map);refresh();});v->addStretch();return page;
+}
+Adjustments MainWindow::adjustments() const {
+    Adjustments a=layerStyle;a.zoom=zoom->value()/100.;a.hue=sliders["hue"]->value();a.saturation=sliders["saturation"]->value()/100.;a.brightness=sliders["brightness"]->value()/100.;a.contrast=sliders["contrast"]->value()/100.;a.exposure=sliders["exposure"]->value()/100.;a.blacks=sliders["blacks"]->value()/255.;a.gamma=sliders["gamma"]->value()/100.;a.whites=sliders["whites"]->value()/255.;a.red=sliders["red"]->value()/100.;a.green=sliders["green"]->value()/100.;a.blue=sliders["blue"]->value()/100.;a.flat=flat->isChecked();
+    a.padding=QMarginsF(paddingInputs[0]->value()/100.,paddingInputs[1]->value()/100.,paddingInputs[2]->value()/100.,paddingInputs[3]->value()/100.);
+    a.overlay=styleChecks["overlay"]->isChecked();a.gradient=styleChecks["gradient"]->isChecked();a.stroke=styleChecks["stroke"]->isChecked();a.shadow=styleChecks["shadow"]->isChecked();a.glow=styleChecks["glow"]->isChecked();a.innerShadow=styleChecks["innerShadow"]->isChecked();a.bevel=styleChecks["bevel"]->isChecked();return a;
+}
+void MainWindow::refresh(){
+    if(!previewVariant||styleChecks.size()<7)return;
+    if(sliders["blacks"]->value()>=sliders["whites"]->value())sliders["whites"]->setValue(sliders["blacks"]->value()+1);
+    zoomValue->setText(QString::number(zoom->value())+"%");int variant=previewVariant->currentIndex();preview->setAdjustments(adjustments(),QSize(widthInput->value(),heightInput->value()),variant?&presets[variant-1]:nullptr);
+    if(tabs&&tabs->currentIndex()==4&&!original.isNull()&&textureMapPreview&&!textureBgw.isEmpty()){QMap<QString,int> strengths;for(auto it=textureMapSliders.cbegin();it!=textureMapSliders.cend();++it)strengths[it.key()]=it.value()->value();QString map=textureMapPreview->currentText();QImage previewSource=original.scaled(QSize(768,768),Qt::KeepAspectRatio,Qt::SmoothTransformation);preview->setTextureFrame(map=="Full PBR shaded"?renderPbrPreview(previewSource,strengths,textureBgw[0]->value(),textureBgw[2]->value(),textureBgw[3]->value()):renderTextureMap(previewSource,map,strengths,textureBgw[0]->value(),textureBgw[2]->value(),textureBgw[3]->value()));}else preview->clearTextureFrame();
+    preview->setGuides(guides->isChecked(),QMarginsF(safeInputs[0]->value()/100.,safeInputs[1]->value()/100.,safeInputs[2]->value()/100.,safeInputs[3]->value()/100.));
+}
+void MainWindow::setDimensions(int w,int h){changing=true;widthInput->setValue(w);heightInput->setValue(h);changing=false;refresh();}
+void MainWindow::aspectChanged(){
+    int index=ratio->currentIndex();const QVector<double> ratios{original.isNull()?1.:double(original.width())/original.height(),1,16./9,9./16,4./3};double value=1;
+    if(index==5){bool ok=false;QString text=QInputDialog::getText(this,"Custom aspect ratio","Width:height",QLineEdit::Normal,"3:2",&ok);auto parts=text.split(':');bool a=false,b=false;double w=parts.value(0).toDouble(&a),h=parts.value(1).toDouble(&b);if(!ok||!a||!b||w<=0||h<=0||w/h<.05||w/h>20){QSignalBlocker block(ratio);ratio->setCurrentIndex(0);return;}value=w/h;}else value=ratios[index];
+    lockedRatio=value;{QSignalBlocker block(lock);lock->setChecked(true);}setDimensions(widthInput->value(),qRound(widthInput->value()/value));
+}
+void MainWindow::chooseFiles(){loadFiles(QFileDialog::getOpenFileNames(this,"Import images, PSDs and videos",{},"Media (*.png *.jpg *.jpeg *.bmp *.psd *.psb *.mp4 *.mov *.avi *.mkv *.webm *.gif);;All files (*)"));}
+void MainWindow::loadFiles(const QStringList &paths){
+    if(paths.isEmpty())return;if(loading){status->setText("Wait for the current file to load.");return;}QStringList imported;
+    for(const auto &path:paths){if(!BatchManager::supported(path)||!QFileInfo::exists(path))continue;QString suffix=QFileInfo(path).suffix().toLower();if(suffix=="psd"||suffix=="psb"){
+        QString cache=captures.filePath("psd-"+QUuid::createUuid().toString(QUuid::Id128));QString image=PsdImporter::importFile(this,path,cache);if(image.isEmpty())continue;inputAliases[image]=QFileInfo(path).absoluteFilePath();imported<<image;
+    }else imported<<QFileInfo(path).absoluteFilePath();}
+    batch.add(imported);updateBatchLabel();if(!imported.isEmpty())selectFile(imported.first());
+}
+void MainWindow::selectFile(const QString &path){
+    if(loading)return;stopPlayback();player->setSource({});currentFile=path;bool video=VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
+    QString name=QFileInfo(inputAliases.value(path,path)).fileName();filename->setText(fontMetrics().elidedText("PREVIEW · "+name,Qt::ElideMiddle,460));filename->setToolTip(inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
+    status->setText("Loading…");loading=true;QString ffmpeg=VideoProcessor::findFfmpeg();loadWatcher.setFuture(QtConcurrent::run([path,video,ffmpeg]{LoadedMedia result;try{if(video){result.info=VideoProcessor::inspect(ffmpeg,path);result.image=VideoProcessor::firstFrame(ffmpeg,path);}else{result.image=ImageProcessor::read(path);result.info.size=result.image.size();}}catch(const std::exception &e){result.error=QString::fromUtf8(e.what());}return result;}));
+}
+void MainWindow::navigate(int delta){if(batch.files.isEmpty()||loading)return;int index=batch.files.indexOf(currentFile);index=(index+delta+batch.files.size())%batch.files.size();selectFile(batch.files[index]);}
+void MainWindow::updateBatchLabel(){
+    batchLabel->setText(QString("%1 selected · formats in Output").arg(batch.files.size()));QSignalBlocker block(navigation);navigation->clear();for(const auto &path:batch.files)navigation->addItem(QFileInfo(inputAliases.value(path,path)).fileName(),path);navigation->setCurrentIndex(batch.files.indexOf(currentFile));navLabel->setText(QString("%1 / %2").arg(qMax(0,batch.files.indexOf(currentFile)+1)).arg(batch.files.size()));
+}
+void MainWindow::manageBatch(){
+    QDialog dialog(this);dialog.setWindowTitle("Selected images & videos");dialog.resize(490,380);auto *v=new QVBoxLayout(&dialog);auto *list=new QListWidget;list->setSelectionMode(QAbstractItemView::ExtendedSelection);v->addWidget(list,1);
+    auto populate=[&]{list->clear();for(const auto &path:batch.files){auto *item=new QListWidgetItem(QFileInfo(inputAliases.value(path,path)).fileName(),list);item->setData(Qt::UserRole,path);item->setToolTip(inputAliases.value(path,path));}};populate();auto *r=row(v);auto *add=button("Add…",r,"blue"),*remove=button("Remove",r,"pink"),*view=button("View",r);connect(add,&QPushButton::clicked,&dialog,[&]{chooseFiles();populate();});connect(remove,&QPushButton::clicked,&dialog,[&]{for(auto *item:list->selectedItems()){batch.files.removeAll(item->data(Qt::UserRole).toString());delete item;}updateBatchLabel();});connect(view,&QPushButton::clicked,&dialog,[&]{if(list->currentItem()){selectFile(list->currentItem()->data(Qt::UserRole).toString());dialog.accept();}});auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();
+}
+void MainWindow::addSize(int size){
+    if(!size){bool ok=false;size=QInputDialog::getInt(this,"Add output width","Width in pixels",1024,1,8192,1,&ok);if(!ok)return;}for(int i=0;i<sizes->count();++i)if(sizes->item(i)->data(Qt::UserRole).toInt()==size){sizes->item(i)->setCheckState(Qt::Checked);return;}auto *item=new QListWidgetItem(QString::number(size),sizes);item->setData(Qt::UserRole,size);item->setFlags(item->flags()|Qt::ItemIsUserCheckable);item->setCheckState(Qt::Checked);
+}
+void MainWindow::syncRange(bool save){
+    if(!timeline)return;double a=inMarker->value(),b=outMarker->value();timeline->setRange(a,b);if(save&&!currentFile.isEmpty()&&VideoProcessor::isVideo(currentFile))draftRanges[currentFile]={a,b};
+}
+void MainWindow::addClip(){
+    if(!VideoProcessor::isVideo(currentFile)){showError("Select a video to add clip ranges.");return;}if(outMarker->value()<=inMarker->value()){showError("The Out marker must be after In.");return;}
+    auto &ranges=clips[currentFile];ranges<<ClipRange{QString("Clip %1").arg(ranges.size()+1),inMarker->value(),outMarker->value(),true};updateClipTable();
+}
+void MainWindow::updateClipTable(){
+    updatingClips=true;auto ranges=clips.value(currentFile);clipTable->setRowCount(ranges.size());for(int i=0;i<ranges.size();++i){auto *enabled=new QTableWidgetItem;enabled->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable|Qt::ItemIsUserCheckable);enabled->setCheckState(ranges[i].enabled?Qt::Checked:Qt::Unchecked);clipTable->setItem(i,0,enabled);clipTable->setItem(i,1,new QTableWidgetItem(ranges[i].name));for(int col=2;col<4;++col){auto *item=new QTableWidgetItem(QString::number(col==2?ranges[i].start:ranges[i].end,'f',3));item->setFlags(Qt::ItemIsEnabled|Qt::ItemIsSelectable);clipTable->setItem(i,col,item);}}updatingClips=false;timeline->setClips(ranges);
+}
+void MainWindow::togglePlayback(){if(original.isNull()||!VideoProcessor::isVideo(currentFile))return;if(player->playbackState()==QMediaPlayer::PlayingState)player->pause();else player->play();}
+void MainWindow::stopPlayback(){if(player)player->pause();}
+void MainWindow::showExportWindow(){
+    if(!exportDialog){exportDialog=new QDialog(this);exportDialog->setWindowTitle("Aspectra · Export");exportDialog->setWindowModality(Qt::WindowModal);exportDialog->setFixedSize(462,370);auto *v=new QVBoxLayout(exportDialog);v->setContentsMargins(20,20,20,20);v->addWidget(label("EXPORT QUEUE","section"));exportStatus=label("Preparing outputs…");exportStatus->setWordWrap(true);v->addWidget(exportStatus);exportProgress=new QProgressBar;v->addWidget(exportProgress);exportLog=new QPlainTextEdit;exportLog->setReadOnly(true);v->addWidget(exportLog,1);auto *r=row(v);exportOpen=button("Open folder",r,"blue");exportCancel=button("Cancel export",r,"pink");exportDone=button("Close",r);connect(exportOpen,&QPushButton::clicked,this,[this]{QDesktopServices::openUrl(QUrl::fromLocalFile(lastFolder));});connect(exportCancel,&QPushButton::clicked,this,[this]{if(cancelFlag)*cancelFlag=true;exportStatus->setText("Cancelling…");});connect(exportDone,&QPushButton::clicked,exportDialog,&QDialog::hide);}
+    exportCancel->show();exportDone->setEnabled(false);exportOpen->setEnabled(false);exportProgress->setValue(0);exportLog->clear();exportStatus->setText("Preparing outputs…");exportDialog->move(frameGeometry().center()-exportDialog->rect().center());exportDialog->show();exportDialog->raise();
+}
+void MainWindow::exportFiles(){
+    if(exportWatcher.isRunning()){exportDialog->show();exportDialog->raise();return;}if(batch.files.isEmpty()){showError("Import images or videos first.");return;}
+    ExportJob job;job.files=batch.files;job.inputAliases=inputAliases;job.adjustments=adjustments();job.presets=presets;job.clips=clips;job.workers=workerCount->currentText().toInt();job.pngCompression=1;job.archiveLevel=archiveMode->currentIndex()==1?0:archiveMode->currentIndex()==2?9:1;
+    for(auto it=imageFormats.begin();it!=imageFormats.end();++it)if(it.value()->isChecked())job.imageFormats<<it.key();for(auto it=videoFormats.begin();it!=videoFormats.end();++it)if(it.value()->isChecked())job.videoFormats<<it.key();
+    for(const auto &path:job.files){bool video=VideoProcessor::isVideo(path);if((video?job.videoFormats:job.imageFormats).isEmpty()){showError(video?"Check at least one video format in Output.":"Check at least one image format in Output.");return;}if(video&&!job.clips.contains(path)&&draftRanges.contains(path)){auto r=draftRanges[path];if(r.second<=r.first){showError("Invalid In / Out markers for "+QFileInfo(path).fileName());return;}job.clips[path]={ClipRange{"Range",r.first,r.second,true}};}}
+    for(int i=0;i<sizes->count();++i)if(sizes->item(i)->checkState()==Qt::Checked){int w=sizes->item(i)->data(Qt::UserRole).toInt(),h=qMax(1,qRound(double(w)*heightInput->value()/widthInput->value()));if(h>8192){showError("An output height exceeds 8192 pixels.");return;}job.sizes<<QSize(w,h);}if(job.sizes.isEmpty()){showError("Check an output width in Output.");return;}
+    job.ffmpeg=VideoProcessor::findFfmpeg();job.rar=VideoProcessor::findRar();job.zip=zip->isChecked();job.createRar=rar->isChecked();job.quality=quality->value();job.crf=crf->value();
+    for(const auto &path:job.files)if(VideoProcessor::isVideo(path)&&job.ffmpeg.isEmpty()){showError("Select ffmpeg.exe in Settings.");return;}
+    job.outputRoot=QFileDialog::getExistingDirectory(this,"Choose export destination",QSettings().value("outputRoot",QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).toString());if(job.outputRoot.isEmpty())return;QSettings().setValue("outputRoot",job.outputRoot);stopPlayback();cancelFlag=std::make_shared<std::atomic_bool>(false);auto cancel=cancelFlag;exportButton->setEnabled(false);showExportWindow();
+    exportWatcher.setFuture(QtConcurrent::run([this,job,cancel]{return ExportManager::run(job,*cancel,[this](int n,int total,QString text){QMetaObject::invokeMethod(this,[this,n,total,text]{exportProgress->setMaximum(total);exportProgress->setValue(n);exportStatus->setText(text);if(text.startsWith("Rendered"))exportLog->appendPlainText(text);status->setText(QString("Exporting %1 / %2").arg(n).arg(total));},Qt::QueuedConnection);});}));
+}
+void MainWindow::settingsDialog(){
+    QDialog dialog(this);dialog.setWindowTitle("Aspectra settings");dialog.setMinimumWidth(440);auto *v=new QVBoxLayout(&dialog);v->addWidget(label("EXTERNAL ENCODERS","section"));for(const auto &key:QStringList{"ffmpeg","rar"}){auto *r=row(v);r->addWidget(label(key.toUpper()));auto *path=new QLineEdit(key=="ffmpeg"?VideoProcessor::findFfmpeg():VideoProcessor::findRar());r->addWidget(path,1);auto *browse=button("…",r);connect(browse,&QPushButton::clicked,&dialog,[&,path,key]{auto file=QFileDialog::getOpenFileName(&dialog,"Select "+key+".exe",{},"Executable (*.exe)");if(!file.isEmpty())path->setText(file);});connect(path,&QLineEdit::textChanged,&dialog,[this,key](QString value){QSettings().setValue(key,value);rar->setEnabled(!VideoProcessor::findRar().isEmpty());if(!rar->isEnabled())rar->setChecked(false);});}
+    auto *reset=button("Reset color, crop and layer styles",v,"gold");connect(reset,&QPushButton::clicked,this,[this]{zoom->setValue(100);for(auto it=sliders.begin();it!=sliders.end();++it)it.value()->setValue(it.key()=="gamma"||it.key()=="contrast"||it.key()=="saturation"?100:it.key()=="whites"?255:0);for(auto *c:styleChecks)c->setChecked(false);flat->setChecked(false);previewVariant->setCurrentIndex(0);for(auto *n:paddingInputs)n->setValue(0);refresh();});v->addWidget(label("PSD reader is bundled. No Photoshop or separate Python install needed.","muted"));auto *done=button("Done",v,"blue");connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();
+}
+void MainWindow::editPreset(int index){
+    QDialog dialog(this);dialog.setWindowTitle("Edit "+presets[index].name+" variant");auto *v=new QVBoxLayout(&dialog);auto *color=button("Choose color…",v,"blue");connect(color,&QPushButton::clicked,this,[this,index,&dialog]{QColor selected=QColorDialog::getColor(presets[index].color,&dialog);if(selected.isValid()){presets[index].color=selected;refresh();}});auto *form=new QFormLayout;v->addLayout(form);auto *threshold=new QDoubleSpinBox;threshold->setRange(0,1);threshold->setSingleStep(.05);threshold->setValue(presets[index].threshold);form->addRow("Hide below luminance",threshold);auto *gamma=new QDoubleSpinBox;gamma->setRange(.1,3);gamma->setSingleStep(.1);gamma->setValue(presets[index].gamma);form->addRow("Alpha midtones",gamma);connect(threshold,&QDoubleSpinBox::valueChanged,this,[this,index](double value){presets[index].threshold=value;refresh();});connect(gamma,&QDoubleSpinBox::valueChanged,this,[this,index](double value){presets[index].gamma=value;refresh();});previewVariant->setCurrentIndex(index+1);auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();
+}
+void MainWindow::showError(const QString &text){logs<<text;status->setText("Error · see Log");QMessageBox::warning(this,"Aspectra",text);}
+void MainWindow::showLog(){QDialog dialog(this);dialog.setWindowTitle("Activity log");dialog.resize(490,350);auto *v=new QVBoxLayout(&dialog);auto *text=new QPlainTextEdit(logs.isEmpty()?"No operations yet.":logs.join('\n'));text->setReadOnly(true);v->addWidget(text);auto *done=button("Close",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();}
+void MainWindow::dragEnterEvent(QDragEnterEvent *event){if(event->mimeData()->hasUrls())event->acceptProposedAction();}
+void MainWindow::dropEvent(QDropEvent *event){QStringList paths;for(const auto &url:event->mimeData()->urls())if(url.isLocalFile())paths<<url.toLocalFile();loadFiles(paths);event->acceptProposedAction();}
+void MainWindow::mousePressEvent(QMouseEvent *event){if(event->button()==Qt::LeftButton&&event->position().y()<72)dragOffset=event->globalPosition().toPoint()-frameGeometry().topLeft();else dragOffset={};}
+void MainWindow::mouseMoveEvent(QMouseEvent *event){if((event->buttons()&Qt::LeftButton)&&!dragOffset.isNull())move(event->globalPosition().toPoint()-dragOffset);}
+void MainWindow::closeEvent(QCloseEvent *event){if(exportWatcher.isRunning()){closing=true;*cancelFlag=true;event->ignore();return;}if(recorder&&recorder->state()!=QProcess::NotRunning){recorder->write("q\n");status->setText("Finishing recording. Close after it loads.");event->ignore();return;}event->accept();}
+void MainWindow::savePreview(const QString &path){grab().save(path);}
+

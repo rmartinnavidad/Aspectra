@@ -1,31 +1,27 @@
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 $repoPath = "C:\Users\rmart\Documents\Codex\2026-09-06\ki\outputs\Aspectra"
 Set-Location -LiteralPath $repoPath
+$env:GIT_TERMINAL_PROMPT = "0"
 
-Write-Host "Aspectra GitHub auto-sync is running..." -ForegroundColor Green
-while ($true) {
-    git fetch origin --prune
+function Invoke-Git([string[]] $Arguments) {
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
+}
 
-    # This repository mirrors the complete Aspectra workspace, including
-    # runtime folders and Windows metadata needed to preserve its hierarchy.
-    git add --all
-    git diff --cached --quiet
-    if ($LASTEXITCODE -ne 0) {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        git commit -m "Auto-sync: $timestamp"
+try {
+    # .tmp.driveupload is a Google Drive transport folder, excluded by .gitignore.
+    Invoke-Git -Arguments @('add', '--all')
+    & git diff --cached --quiet
+    if ($LASTEXITCODE -eq 1) {
+        Invoke-Git -Arguments @('commit', '-m', "Auto-sync: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+    } elseif ($LASTEXITCODE -ne 0) {
+        throw "git diff failed with exit code $LASTEXITCODE"
     }
-
-    # Reconcile any upstream work before publishing this local source change.
-    git pull --rebase origin main
-    if ($LASTEXITCODE -eq 0) {
-        git push origin main
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Aspectra is synced: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Green
-        }
-    } else {
-        Write-Warning "GitHub sync paused for a rebase conflict; resolve it in the repository before the next sync."
-        git rebase --abort
-    }
-
-    Start-Sleep -Seconds 60
+    # GitHub is the mirror. A non-fast-forward push fails visibly rather than
+    # rebasing over independent upstream edits or scanning Drive's Git metadata.
+    Invoke-Git -Arguments @('-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=30', 'push', 'origin', 'main')
+    Write-Host "Aspectra is synced: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+} catch {
+    Write-Error "Aspectra GitHub sync failed: $_"
+    exit 1
 }

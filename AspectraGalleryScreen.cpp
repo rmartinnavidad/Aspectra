@@ -1,4 +1,5 @@
 #include "AspectraGalleryScreen.h"
+#include "GradientSlider.h"
 
 #include <algorithm>
 #include <cmath>
@@ -88,6 +89,24 @@ AspectraGalleryScreen::AspectraGalleryScreen(Presentation presentation, QWidget 
     m_mosaicCanvas->setStyleSheet("QWidget#LivingGalleryCanvas{background:transparent;}");
     m_scrollArea->setWidget(m_mosaicCanvas);
     root->addWidget(m_scrollArea, 1);
+    m_gallerySlider = new GradientSlider(Qt::Horizontal, this);
+    m_gallerySlider->setObjectName("GalleryNavigationSlider");
+    m_gallerySlider->setToolTip("Gallery position");
+    root->addWidget(m_gallerySlider);
+    auto *hbar = m_scrollArea->horizontalScrollBar();
+    m_gallerySlider->setRange(hbar->minimum(), hbar->maximum());
+    m_gallerySlider->setPageStep(hbar->pageStep());
+    m_gallerySlider->setValue(hbar->value());
+    connect(hbar, &QScrollBar::rangeChanged, this, [this](int minimum, int maximum) {
+        m_gallerySlider->setRange(minimum, maximum);
+    });
+    connect(hbar, &QScrollBar::valueChanged, this, [this](int value) {
+        QSignalBlocker block(m_gallerySlider);
+        m_gallerySlider->setValue(value);
+    });
+    connect(m_gallerySlider, &QSlider::valueChanged, this, [hbar](int value) {
+        hbar->setValue(value);
+    });
     m_emptyLabel = new QLabel("No recent projects yet\nImport a project to start your gallery.", m_mosaicCanvas);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
     m_emptyLabel->setStyleSheet("color:#8d9cad;font-size:15px;line-height:1.5;");

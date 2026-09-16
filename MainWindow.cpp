@@ -38,7 +38,7 @@ private:
 QIcon settingIcon(const QString &name);
 class CanvasAspectPreview final : public QWidget {
 public:
-    CanvasAspectPreview(QSpinBox *width,QSpinBox *height,QWidget *parent=nullptr):QWidget(parent),m_width(width),m_height(height){setMinimumSize(300,250);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
+    CanvasAspectPreview(QSpinBox *width,QSpinBox *height,QWidget *parent=nullptr):QWidget(parent),m_width(width),m_height(height){setMinimumSize(220,180);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
     void setAspectRatio(qreal ratio){m_aspectRatio=qMax<qreal>(.01,ratio);update();}
 protected:
     void paintEvent(QPaintEvent *) override {
@@ -885,15 +885,15 @@ void MainWindow::showWelcomeScreen(){
     auto *unit=new QComboBox(settingsPanel);unit->addItems({"px","in","mm"});
     auto *mode=new QComboBox(settingsPanel);mode->addItems({"RGB","CMYK","Grayscale"});
     auto *artboard=new QCheckBox("Artboard",settingsPanel);artboard->setChecked(true);
-    auto *split=new QHBoxLayout;split->setContentsMargins(0,0,0,0);split->setSpacing(16);
-    auto *leftColumn=new QVBoxLayout;leftColumn->setContentsMargins(0,0,0,0);leftColumn->setSpacing(8);
+    auto *mainSplit=new QHBoxLayout;mainSplit->setContentsMargins(0,0,0,0);mainSplit->setSpacing(16);
+    auto *leftCol=new QVBoxLayout;leftCol->setContentsMargins(0,0,0,0);leftCol->setSpacing(8);
     auto *aspectPreview=new CanvasAspectPreview(projectWidth,projectHeight,settingsPanel);
-    leftColumn->addWidget(aspectPreview,1);
-    auto *middleColumn=new QVBoxLayout;middleColumn->setContentsMargins(0,0,0,0);middleColumn->setSpacing(8);
-    auto *presetCaption=label("DOCUMENT PRESETS","WelcomeSection");middleColumn->addWidget(presetCaption);
+    leftCol->addWidget(aspectPreview,1);
+    auto *presetCaption=label("DOCUMENT PRESETS","WelcomeSection");leftCol->addWidget(presetCaption);
+    auto *presetRail=new QScrollArea(settingsPanel);presetRail->setObjectName("DocumentPresetRail");presetRail->setFrameShape(QFrame::NoFrame);presetRail->setWidgetResizable(true);presetRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);presetRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);presetRail->setFixedHeight(132);
     auto *presetHost=new QWidget(settingsPanel);presetHost->setObjectName("DocumentPresetGrid");
     auto *presetLayout=new QGridLayout(presetHost);presetLayout->setContentsMargins(0,0,0,0);presetLayout->setHorizontalSpacing(7);presetLayout->setVerticalSpacing(7);presetLayout->setAlignment(Qt::AlignTop);
-    middleColumn->addWidget(presetHost,1);
+    presetRail->setWidget(presetHost);leftCol->addWidget(presetRail);
     auto makeDimensionSlider=[](QSpinBox *backing){
         auto *control=new QWidget(backing->parentWidget());
         auto *line=new QHBoxLayout(control);line->setContentsMargins(0,0,0,0);line->setSpacing(8);
@@ -909,14 +909,12 @@ void MainWindow::showWelcomeScreen(){
     auto *heightControl=makeDimensionSlider(projectHeight);
     auto *resolutionControl=makeDimensionSlider(projectResolution);
     for(auto *control:{widthControl,heightControl,resolutionControl})control->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
-    auto *rightColumn=new QVBoxLayout;rightColumn->setContentsMargins(0,0,0,0);rightColumn->setSpacing(8);
-    auto *form=new QFormLayout;form->setContentsMargins(0,0,0,0);form->setHorizontalSpacing(10);form->setVerticalSpacing(8);form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    form->addRow("Project Name",projectName);form->addRow("Width",widthControl);form->addRow("Height",heightControl);form->addRow("Resolution",resolutionControl);
+    auto *rightCol=new QFormLayout;rightCol->setContentsMargins(0,0,0,0);rightCol->setHorizontalSpacing(10);rightCol->setVerticalSpacing(8);rightCol->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    rightCol->addRow("Project Name",projectName);rightCol->addRow("Width",widthControl);rightCol->addRow("Height",heightControl);rightCol->addRow("Resolution",resolutionControl);
     auto *canvasFields=new QWidget(settingsPanel);auto *canvasFieldsLayout=new QHBoxLayout(canvasFields);canvasFieldsLayout->setContentsMargins(0,0,0,0);canvasFieldsLayout->setSpacing(8);canvasFieldsLayout->addWidget(unit,1);canvasFieldsLayout->addWidget(mode,1);
-    form->addRow("Canvas",canvasFields);form->addRow(QString{},artboard);
-    rightColumn->addLayout(form);rightColumn->addStretch(1);
-    split->addLayout(leftColumn,3);split->addLayout(middleColumn,2);split->addLayout(rightColumn,3);
-    settings->addLayout(split,1);
+    rightCol->addRow("Canvas",canvasFields);rightCol->addRow(QString{},artboard);
+    mainSplit->addLayout(leftCol,1);mainSplit->addLayout(rightCol,0);
+    settings->addLayout(mainSplit,1);
     root->addWidget(settingsPanel);
 
     struct CanvasPreset { QString name; int width; int height; };

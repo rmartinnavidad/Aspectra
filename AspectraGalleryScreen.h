@@ -4,6 +4,8 @@
 
 #include "GalleryTile.h"
 
+class GradientSlider;
+
 class GalleryMosaicCanvas final : public QWidget {
     Q_OBJECT
 public:
@@ -50,6 +52,7 @@ private:
     struct Span { int columns=1; int rows=1; };
     GalleryMosaicCanvas *m_mosaicCanvas=nullptr;
     QScrollArea *m_scrollArea=nullptr;
+    GradientSlider *m_gallerySlider=nullptr;
     QLabel *m_emptyLabel=nullptr;
     QVector<GalleryTile*> m_tiles;
     QStringList m_projectPaths;

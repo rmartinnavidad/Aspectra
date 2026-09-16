@@ -769,7 +769,7 @@ void MainWindow::refreshTexturePreview(){
         QPainter hist(&out);hist.setPen(Qt::NoPen);hist.setBrush(QColor(10,14,16,190));hist.drawRect(ox,oy,panelWidth,panelHeight);
         hist.setBrush(QColor("#3d91fb"));for(int b=0;b<64;++b){int barHeight=qRound(double(bins[b])/peak*(panelHeight-6));hist.drawRect(ox+b*panelWidth/64,oy+panelHeight-3-barHeight,qMax(1,panelWidth/64),barHeight);}
     }
-    preview->setTextureSphereInteractive(true);preview->setTextureFrame(out);if(!modelAsset.sourcePath.isEmpty())updateLayerDrawer();
+    preview->setTextureSphereInteractive(true);preview->setTextureFrame(out);
     if(materialPreviewDialog&&materialPreviewDialog->isVisible())showMaterialPreview();
 }
 void MainWindow::restoreLayerOverride(){
@@ -794,7 +794,7 @@ void MainWindow::loadModelFile(const QString &path){
     if(modelTextureList){modelTextureList->clear();for(int i=0;i<modelAsset.textures.size();++i){const auto &texture=modelAsset.textures[i];auto *item=new QListWidgetItem(texture.material+"  ·  "+texture.slot+"\n"+QFileInfo(texture.path).fileName(),modelTextureList);item->setData(Qt::UserRole,i);item->setToolTip(texture.path);}if(modelTextureList->count())modelTextureList->setCurrentRow(0);}
     if(modelRail)modelRail->click();
     if(modelSummary)modelSummary->setText(QString("%1 · %2 vertices · %3 faces · %4 material texture inputs").arg(QFileInfo(path).fileName()).arg(modelAsset.vertexCount).arg(modelAsset.faceCount).arg(modelAsset.textures.size()));
-    updateLayerDrawer();status->setText(modelAsset.textures.isEmpty()?"Model loaded · no editable image textures were found":QString("Model loaded · %1 material texture inputs are ready to edit").arg(modelAsset.textures.size()));
+    status->setText(modelAsset.textures.isEmpty()?"Model loaded · no editable image textures were found":QString("Model loaded · %1 material texture inputs are ready to edit").arg(modelAsset.textures.size()));
 }
 void MainWindow::loadProject(){
     QString path=QFileDialog::getOpenFileName(this,"Open Aspectra project",{},"Aspectra project (*.aspectra)");if(path.isEmpty())return;
@@ -805,7 +805,7 @@ void MainWindow::loadProject(){
 }
 void MainWindow::createNewProject(int width,int height,int resolution,bool artboard,const QString &colorMode,const QString &profile,const QColor &background){
     if(galleryScreen)galleryScreen->hide();
-    batch.files.clear();canvasLayers.clear();inputAliases.clear();inputTitles.clear();timelineTracks.clear();currentFile="aspectra://untitled";original=QImage(qMax(1,width),qMax(1,height),QImage::Format_ARGB32);original.fill(background.alpha()==0?Qt::transparent:background);media={};media.size=original.size();setDimensions(width,height);CanvasLayer layer;layer.source=currentFile;layer.name=artboard?"Artboard 1":"Canvas";layer.nativeSize=original.size();canvasLayers[currentFile]=layer;preview->clearVectorTraceFrame();preview->clearTextureFrame();preview->setLayerMask({});preview->setFrame(original);refresh();updateBatchLabel();updateLayerDrawer();if(exportButton)exportButton->setEnabled(true);QSettings settings;settings.setValue("newProjectResolution",resolution);settings.setValue("newProjectColorMode",colorMode);settings.setValue("newProjectProfile",profile);status->setText(QString("New %1 · %2 × %3 · %4 dpi · %5").arg(artboard?"artboard":"transparent canvas").arg(width).arg(height).arg(resolution).arg(colorMode));autosaveProject();
+    batch.files.clear();canvasLayers.clear();inputAliases.clear();inputTitles.clear();timelineTracks.clear();currentFile="aspectra://untitled";original=QImage(qMax(1,width),qMax(1,height),QImage::Format_ARGB32);original.fill(background.alpha()==0?Qt::transparent:background);media={};media.size=original.size();setDimensions(width,height);CanvasLayer layer;layer.source=currentFile;layer.name=artboard?"Artboard 1":"Canvas";layer.nativeSize=original.size();canvasLayers[currentFile]=layer;preview->clearVectorTraceFrame();preview->clearTextureFrame();preview->setLayerMask({});preview->setFrame(original);refresh();updateBatchLabel();if(exportButton)exportButton->setEnabled(true);QSettings settings;settings.setValue("newProjectResolution",resolution);settings.setValue("newProjectColorMode",colorMode);settings.setValue("newProjectProfile",profile);status->setText(QString("New %1 · %2 × %3 · %4 dpi · %5").arg(artboard?"artboard":"transparent canvas").arg(width).arg(height).arg(resolution).arg(colorMode));autosaveProject();
 }
 void MainWindow::autosaveProject(){
     if(!widthInput||!heightInput)return;QJsonObject document;document["version"]=2;document["recovery"]=true;document["savedAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODate);document["canvas"]=QJsonObject{{"width",widthInput->value()},{"height",heightInput->value()},{"ratio",ratio?ratio->currentText():"Custom"}};QJsonArray layers;for(const auto &source:batch.files){const auto layer=canvasLayers.value(source);layers.append(QJsonObject{{"source",source},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible}});}document["layers"]=layers;QSaveFile out(recoveryFilePath());if(!out.open(QIODevice::WriteOnly))return;out.write(QJsonDocument(document).toJson(QJsonDocument::Compact));out.commit();
@@ -1083,11 +1083,8 @@ void MainWindow::selectFile(const QString &path){
     status->setText("Loading…");loading=true;QString ffmpeg=VideoProcessor::findFfmpeg();loadWatcher.setFuture(QtConcurrent::run([path,video,ffmpeg]{LoadedMedia result;try{if(video){result.info=VideoProcessor::inspect(ffmpeg,path);result.image=VideoProcessor::firstFrame(ffmpeg,path);}else{result.image=ImageProcessor::read(path);result.info.size=result.image.size();}}catch(const std::exception &e){result.error=QString::fromUtf8(e.what());}return result;}));
 }
 void MainWindow::navigate(int delta){if(batch.files.isEmpty()||loading)return;int index=batch.files.indexOf(currentFile);index=(index+delta+batch.files.size())%batch.files.size();selectFile(batch.files[index]);}
-void MainWindow::updateLayerDrawer(){
-    // Layer panel UI intentionally removed; canvasLayers and timelineTracks remain the document model.
-}
 void MainWindow::updateBatchLabel(){
-    qint64 sourceBytes=0;for(const auto &path:batch.files)sourceBytes+=QFileInfo(path).size();int formats=0;for(auto it=imageFormats.cbegin();it!=imageFormats.cend();++it)if(it.value()->isChecked())++formats;for(auto it=videoFormats.cbegin();it!=videoFormats.cend();++it)if(it.value()->isChecked())++formats;double estimate=sourceBytes*(formats?qMax(.1,formats*(quality?quality->value()/100.:.9)):1.);auto formatBytes=[](double bytes){return bytes<1024*1024?QString::number(qRound(bytes/1024))+" KB":QString::number(bytes/(1024*1024),'f',1)+" MB";};batchLabel->setText(QString("%1 selected · source %2 · estimated export %3").arg(batch.files.size()).arg(formatBytes(sourceBytes)).arg(formatBytes(estimate)));batchLabel->setToolTip("Estimate uses selected formats and quality. Actual video and compressed-image output can vary.");QSignalBlocker block(navigation);navigation->clear();for(const auto &path:batch.files)navigation->addItem(inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName()),path);navigation->setCurrentIndex(batch.files.indexOf(currentFile));navLabel->setText(QString("%1 / %2").arg(qMax(0,batch.files.indexOf(currentFile)+1)).arg(batch.files.size()));updateLayerDrawer();
+    qint64 sourceBytes=0;for(const auto &path:batch.files)sourceBytes+=QFileInfo(path).size();int formats=0;for(auto it=imageFormats.cbegin();it!=imageFormats.cend();++it)if(it.value()->isChecked())++formats;for(auto it=videoFormats.cbegin();it!=videoFormats.cend();++it)if(it.value()->isChecked())++formats;double estimate=sourceBytes*(formats?qMax(.1,formats*(quality?quality->value()/100.:.9)):1.);auto formatBytes=[](double bytes){return bytes<1024*1024?QString::number(qRound(bytes/1024))+" KB":QString::number(bytes/(1024*1024),'f',1)+" MB";};batchLabel->setText(QString("%1 selected · source %2 · estimated export %3").arg(batch.files.size()).arg(formatBytes(sourceBytes)).arg(formatBytes(estimate)));batchLabel->setToolTip("Estimate uses selected formats and quality. Actual video and compressed-image output can vary.");QSignalBlocker block(navigation);navigation->clear();for(const auto &path:batch.files)navigation->addItem(inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName()),path);navigation->setCurrentIndex(batch.files.indexOf(currentFile));navLabel->setText(QString("%1 / %2").arg(qMax(0,batch.files.indexOf(currentFile)+1)).arg(batch.files.size()));
 }
 void MainWindow::manageBatch(){
     QDialog dialog(this);dialog.setWindowTitle("Selected images & videos");dialog.resize(490,380);auto *v=new QVBoxLayout(&dialog);auto *list=new QListWidget;list->setSelectionMode(QAbstractItemView::ExtendedSelection);v->addWidget(list,1);
@@ -1119,7 +1116,7 @@ void MainWindow::updateTrackPanel(){
     }
     const bool have=!timelineTracks.isEmpty();
     for(auto *control:{static_cast<QWidget*>(trackX),static_cast<QWidget*>(trackY),static_cast<QWidget*>(trackScale),static_cast<QWidget*>(trackRotation),static_cast<QWidget*>(trackOpacity),static_cast<QWidget*>(trackBlend),static_cast<QWidget*>(trackTransition)})if(control)control->setEnabled(have);
-    if(timeline)timeline->setTracks(timelineTracks);updateLayerDrawer();
+    if(timeline)timeline->setTracks(timelineTracks);
 }
 QImage MainWindow::compositeTimelineTracks(const QImage &source) const{
     const double time=compositionMode&&!VideoProcessor::isVideo(currentFile)?compositionPosition:(player?qMax(0.,player->position()/1000.):0.);

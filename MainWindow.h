@@ -105,7 +105,7 @@ private:
     QWidget *framePanel();QWidget *colorPanel();QWidget *selectRefinePanel();QWidget *stylesPanel();QWidget *clipsPanel();QWidget *outputPanel();QWidget *texturePanel();QWidget *patternsPanel();QWidget *modelPanel();
     Adjustments adjustments() const;
     void refresh();void refreshTexturePreview();void updatePatternPreview();void showMaterialPreview();void chooseFiles();void loadModelFile(const QString &);void manageBatch();void selectFile(const QString &);void navigate(int);
-    void setDimensions(int,int);void aspectChanged();void updateBatchLabel();void updateLayerDrawer();void addSize(int=0);
+    void setDimensions(int,int);void aspectChanged();void updateBatchLabel();void addSize(int=0);
     void exportFiles();void settingsDialog();void editPreset(int);void startCapture();void startRecording(QRect);
     void togglePlayback();void stopPlayback();void showError(const QString &);void showLog();
     void recordUndoState();void undoRaster();void redoRaster();void updateUndoControls();

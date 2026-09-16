@@ -38,22 +38,43 @@ private:
 QIcon settingIcon(const QString &name);
 class CanvasAspectPreview final : public QWidget {
 public:
-    CanvasAspectPreview(QSpinBox *width,QSpinBox *height,QWidget *parent=nullptr):QWidget(parent),m_width(width),m_height(height){setMinimumSize(220,180);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
-    void setAspectRatio(qreal ratio){m_aspectRatio=qMax<qreal>(.01,ratio);update();}
+    explicit CanvasAspectPreview(QWidget *parent=nullptr):QWidget(parent){setMinimumSize(220,180);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
+    void updateAspect(int width,int height,int resolution,const QString &unit){
+        m_width=qMax(1,width);m_height=qMax(1,height);m_resolution=qMax(1,resolution);m_unit=unit;update();
+    }
 protected:
     void paintEvent(QPaintEvent *) override {
         QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);
         const QRectF area=rect().adjusted(18,16,-18,-16);
-        const qreal width=qMax(1,m_width?m_width->value():1),height=qMax(1,m_height?m_height->value():1);
-        const qreal factor=qMin(area.width()/m_aspectRatio,area.height());
-        const QSizeF size(m_aspectRatio*factor,factor);
+        const qreal aspect=qMax<qreal>(.01,qreal(m_width)/qreal(m_height));
+        const qreal factor=qMin(area.width()/aspect,area.height());
+        const QSizeF size(aspect*factor,factor);
         const QRectF canvas(area.center().x()-size.width()/2,area.center().y()-size.height()/2,size.width(),size.height());
-        painter.setPen(QPen(QColor("#7a4dff"),2));painter.setBrush(QColor(122,77,255,35));painter.drawRoundedRect(canvas,8,8);
-        painter.setPen(QColor(221,211,255,205));painter.setFont(QFont("Segoe UI",9,QFont::DemiBold));painter.drawText(canvas,Qt::AlignCenter,QString("%1 × %2").arg(qRound(width)).arg(qRound(height)));
+        QPainterPath canvasPath;canvasPath.addRoundedRect(canvas,8,8);
+        painter.setPen(QPen(QColor("#7a4dff"),2));painter.setBrush(QColor(122,77,255,35));painter.drawPath(canvasPath);
+        painter.save();painter.setClipPath(canvasPath);
+        const qreal density=qBound<qreal>(1.0,qreal(m_resolution)/24.0,160.0);
+        const qreal spacingX=qMax<qreal>(4.0,canvas.width()/density),spacingY=qMax<qreal>(4.0,canvas.height()/density);
+        painter.setPen(QPen(QColor(122,77,255,20),1));
+        for(qreal x=canvas.left();x<=canvas.right();x+=spacingX)painter.drawLine(QPointF(x,canvas.top()),QPointF(x,canvas.bottom()));
+        for(qreal y=canvas.top();y<=canvas.bottom();y+=spacingY)painter.drawLine(QPointF(canvas.left(),y),QPointF(canvas.right(),y));
+        painter.restore();
+        qreal pixelWidth=m_width,pixelHeight=m_height;
+        if(m_unit=="in"){pixelWidth*=m_resolution;pixelHeight*=m_resolution;}
+        else if(m_unit=="mm"){pixelWidth=pixelWidth/25.4*m_resolution;pixelHeight=pixelHeight/25.4*m_resolution;}
+        const QString primary=QString("%1 × %2 %3").arg(m_width).arg(m_height).arg(m_unit);
+        QString secondary;
+        if(m_unit=="px")secondary=QString("Physical Print: %1\" × %2\"").arg(QString::number(qreal(m_width)/m_resolution,'f',2)).arg(QString::number(qreal(m_height)/m_resolution,'f',2));
+        else if(m_unit=="in")secondary=QString("Digital Size: %1 × %2 px").arg(qRound(pixelWidth)).arg(qRound(pixelHeight));
+        else secondary=QString("Digital Size: %1 × %2 px").arg(qRound(pixelWidth)).arg(qRound(pixelHeight));
+        const QPointF center=canvas.center();
+        painter.setPen(QColor(237,231,255,235));painter.setFont(QFont("Segoe UI",10,QFont::DemiBold));painter.drawText(QRectF(canvas.left()+10,center.y()-19,canvas.width()-20,20),Qt::AlignCenter,primary);
+        painter.setPen(QColor(213,203,240,170));painter.setFont(QFont("Segoe UI",8,QFont::Medium));painter.drawText(QRectF(canvas.left()+10,center.y()+2,canvas.width()-20,18),Qt::AlignCenter,secondary);
+        painter.setPen(QColor(221,211,255,190));painter.setFont(QFont("Segoe UI",8,QFont::DemiBold));painter.drawText(canvas.adjusted(10,8,-10,-8),Qt::AlignRight|Qt::AlignBottom,QString::number(pixelWidth*pixelHeight/1000000.0,'f',1)+" MP");
     }
 private:
-    QPointer<QSpinBox> m_width,m_height;
-    qreal m_aspectRatio=1.0;
+    int m_width=1920,m_height=1080,m_resolution=300;
+    QString m_unit="px";
 };
 class FluidToolButton final : public QToolButton {
 public:
@@ -950,7 +971,7 @@ void MainWindow::showWelcomeScreen(){
     auto *artboard=new QCheckBox("Artboard",settingsPanel);artboard->setChecked(true);
     auto *mainSplit=new QHBoxLayout;mainSplit->setContentsMargins(0,0,0,0);mainSplit->setSpacing(16);
     auto *leftCol=new QVBoxLayout;leftCol->setContentsMargins(0,0,0,0);leftCol->setSpacing(8);
-    auto *aspectPreview=new CanvasAspectPreview(projectWidth,projectHeight,settingsPanel);
+    auto *aspectPreview=new CanvasAspectPreview(settingsPanel);
     leftCol->addWidget(aspectPreview,1);
     auto *presetCaption=label("DOCUMENT PRESETS","WelcomeSection");leftCol->addWidget(presetCaption);
     auto *presetRail=new QScrollArea(settingsPanel);presetRail->setObjectName("DocumentPresetRail");presetRail->setFrameShape(QFrame::NoFrame);presetRail->setWidgetResizable(true);presetRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);presetRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);presetRail->setFixedHeight(132);
@@ -990,10 +1011,12 @@ void MainWindow::showWelcomeScreen(){
         {6,{{"iPhone",1170,2532},{"Android",1080,2400},{"Mobile Square",1080,1080}}},
         {7,{{"HD Film",1920,1080},{"4K Film",3840,2160},{"Vertical Film",1080,1920}}}
     };
-    auto updateAspect=[projectWidth,projectHeight,aspectPreview]{aspectPreview->setAspectRatio(projectWidth->value()/qreal(qMax(1,projectHeight->value())));};
+    auto updateAspect=[projectWidth,projectHeight,projectResolution,unit,aspectPreview]{aspectPreview->updateAspect(projectWidth->value(),projectHeight->value(),projectResolution->value(),unit->currentText());};
     connect(projectWidth,qOverload<int>(&QSpinBox::valueChanged),aspectPreview,[updateAspect](int){updateAspect();});
     connect(projectHeight,qOverload<int>(&QSpinBox::valueChanged),aspectPreview,[updateAspect](int){updateAspect();});
-    for(auto *slider:{widthControl->findChild<QSlider*>(),heightControl->findChild<QSlider*>()})if(slider)connect(slider,&QSlider::valueChanged,aspectPreview,[updateAspect](int){updateAspect();});
+    connect(projectResolution,qOverload<int>(&QSpinBox::valueChanged),aspectPreview,[updateAspect](int){updateAspect();});
+    connect(unit,&QComboBox::currentTextChanged,aspectPreview,[updateAspect](const QString &){updateAspect();});
+    for(auto *slider:{widthControl->findChild<QSlider*>(),heightControl->findChild<QSlider*>(),resolutionControl->findChild<QSlider*>()})if(slider)connect(slider,&QSlider::valueChanged,aspectPreview,[updateAspect](int){updateAspect();});
     auto rebuildPresets=[presetLayout,presetHost,projectWidth,projectHeight,updateAspect,presetsByTab](int tabId){
         clearLayoutItems(presetLayout);
         const QVector<CanvasPreset> presets=presetsByTab.value(tabId,presetsByTab.value(0));

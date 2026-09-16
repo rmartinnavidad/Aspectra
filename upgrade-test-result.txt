@@ -1,0 +1,7 @@
+PASS: native OBJ/MTL material slots, UV mesh, and texture extraction
+PASS: Blender OBJ mesh import · 35366 triangles
+PASS: Blender binary FBX mesh import · 6192 vertices · 3124 triangles · 0 materials
+PASS: native ASCII FBX mesh, UV, material and texture graph
+PASS: live padding, overlays, stroke, glow, shadows, bevel and opacity
+PASS: six outputs across two sizes and three image formats
+BENCHMARK 1920×1080 levels: old 1052.8 ms; new 19.4 ms; 54.22× faster in this run

@@ -6,8 +6,8 @@ Write-Host "Aspectra GitHub auto-sync is running..." -ForegroundColor Green
 while ($true) {
     git fetch origin --prune
 
-    # Respect .gitignore so deploy folders, runtimes, and Windows metadata
-    # never become part of the source repository.
+    # This repository mirrors the complete Aspectra workspace, including
+    # runtime folders and Windows metadata needed to preserve its hierarchy.
     git add --all
     git diff --cached --quiet
     if ($LASTEXITCODE -ne 0) {

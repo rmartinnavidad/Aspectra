@@ -80,10 +80,13 @@ class FluidToolButton final : public QToolButton {
 public:
     qreal m_hoverProgress=0.0;
     qreal m_clickScale=1.0;
+    qreal m_rippleRadius=0.0;
     QPointF m_parallax;
+    QPointF m_clickPos;
     QVariantAnimation *hoverAnim=nullptr;
     QVariantAnimation *clickAnim=nullptr;
     QVariantAnimation *parallaxAnim=nullptr;
+    QVariantAnimation *rippleAnim=nullptr;
 
     explicit FluidToolButton(QWidget *parent=nullptr) : QToolButton(parent) {
         setMouseTracking(true);
@@ -92,13 +95,18 @@ public:
         hoverAnim->setEasingCurve(QEasingCurve::OutQuad);
         connect(hoverAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_hoverProgress=value.toReal();update();});
         clickAnim=new QVariantAnimation(this);
-        clickAnim->setDuration(120);
+        clickAnim->setDuration(150);
         clickAnim->setEasingCurve(QEasingCurve::InQuad);
         connect(clickAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_clickScale=value.toReal();update();});
         parallaxAnim=new QVariantAnimation(this);
-        parallaxAnim->setDuration(200);
+        parallaxAnim->setDuration(250);
         parallaxAnim->setEasingCurve(QEasingCurve::OutBack);
         connect(parallaxAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_parallax=value.toPointF();update();});
+        rippleAnim=new QVariantAnimation(this);
+        rippleAnim->setDuration(300);
+        rippleAnim->setEasingCurve(QEasingCurve::OutQuad);
+        connect(rippleAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_rippleRadius=value.toReal();update();});
+        connect(rippleAnim,&QVariantAnimation::finished,this,[this]{m_rippleRadius=0.0;update();});
     }
 protected:
     void enterEvent(QEnterEvent *event) override {
@@ -111,7 +119,9 @@ protected:
         QToolButton::leaveEvent(event);
     }
     void mousePressEvent(QMouseEvent *event) override {
+        m_clickPos=event->position();
         clickAnim->stop();clickAnim->setEasingCurve(QEasingCurve::InQuad);clickAnim->setStartValue(m_clickScale);clickAnim->setEndValue(.88);clickAnim->start();
+        rippleAnim->stop();rippleAnim->setStartValue(0.0);rippleAnim->setEndValue(width()*1.5);rippleAnim->start();
         QToolButton::mousePressEvent(event);
     }
     void mouseReleaseEvent(QMouseEvent *event) override {
@@ -127,16 +137,19 @@ protected:
     void paintEvent(QPaintEvent *) override {
         QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);
         const QRectF bounds=rect().adjusted(1,1,-1,-1);
-        painter.translate(bounds.center());painter.scale(m_clickScale,m_clickScale);painter.translate(m_parallax);painter.translate(-bounds.center());
-        QColor baseColor=isChecked()?QColor(122,77,255,60):QColor(25,25,30,200);
-        if(m_hoverProgress>0)baseColor=baseColor.lighter(qRound(100+20*m_hoverProgress));
-        painter.setBrush(baseColor);
-        painter.setPen(QPen(isChecked()?QColor(122,77,255):QColor(255,255,255,qRound(30+50*m_hoverProgress)),isChecked()?2.0:1.0));
-        painter.drawRoundedRect(bounds,bounds.height()/2.0,bounds.height()/2.0);
+        QColor baseColor=isChecked()?QColor(122,77,255,40):QColor(9,9,12,200);
+        if(m_hoverProgress>0)baseColor=baseColor.lighter(qRound(100+15*m_hoverProgress));
+        QPainterPath clipPath;clipPath.addRoundedRect(bounds,bounds.height()/2.0,bounds.height()/2.0);
+        painter.save();painter.setClipPath(clipPath);painter.fillPath(clipPath,baseColor);
+        if(m_rippleRadius>0){QRadialGradient ripple(m_clickPos,m_rippleRadius);ripple.setColorAt(0,QColor(255,255,255,60));ripple.setColorAt(1,QColor(255,255,255,0));painter.fillPath(clipPath,ripple);}
+        painter.restore();
+        painter.setPen(QPen(isChecked()?QColor(122,77,255):QColor(255,255,255,qRound(20+40*m_hoverProgress)),isChecked()?2.0:1.0));painter.drawPath(clipPath);
+        painter.save();painter.translate(bounds.center());painter.scale(m_clickScale,m_clickScale);painter.translate(m_parallax);painter.translate(-bounds.center());
         if(!icon().isNull()){
             const QPixmap pixmap=icon().pixmap(iconSize());
             painter.drawPixmap(bounds.center()-QPointF(pixmap.width()/2.0,pixmap.height()/2.0),pixmap);
         }
+        painter.restore();
     }
 };
 class SettingRailButton final : public QToolButton {
@@ -1309,6 +1322,21 @@ void MainWindow::updateLayerDrawer(){
     {
     if(bottomDock){const bool expanded=bottomDock->findChild<QWidget*>("LayerCardSurface")&&bottomDock->findChild<QWidget*>("LayerCardSurface")->property("layerExpanded").toBool();bottomDock->setFixedHeight(expanded?500:190);if(bottomDock->property("absoluteDock").toBool()){auto *shell=bottomDock->parentWidget();if(shell){bottomDock->setGeometry(16,qMax(0,shell->height()-bottomDock->height()),qMax(1,shell->width()-32),bottomDock->height());bottomDock->show();bottomDock->raise();}}if(auto *navigator=bottomDock->findChild<QWidget*>("LayerCardNavigator")){navigator->setGeometry(0,0,bottomDock->width(),bottomDock->height());navigator->hide();}if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){surface->setGeometry(0,0,bottomDock->width(),bottomDock->height());surface->show();surface->raise();}}
     if(tabCarousel&&!findChild<QScrollArea*>("MainToolRail")){auto *settingsHost=tabCarousel->parentWidget();auto *settingsLayout=qobject_cast<QVBoxLayout*>(settingsHost?settingsHost->layout():nullptr);if(settingsLayout){auto *toolRail=new QScrollArea(settingsHost);toolRail->setObjectName("MainToolRail");toolRail->setFixedHeight(58);toolRail->setFrameShape(QFrame::NoFrame);toolRail->setWidgetResizable(false);toolRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);toolRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *toolHost=new QWidget(toolRail);toolHost->setMinimumWidth(620);auto *toolLayout=new QHBoxLayout(toolHost);toolLayout->setContentsMargins(0,3,0,3);toolLayout->setSpacing(9);toolLayout->addStretch();toolRail->setWidget(toolHost);toolRail->setStyleSheet("QScrollArea{background:#000;border:none;} QToolButton#MainToolButton{background:#000;border:1px solid #fff;border-radius:23px;} QToolButton#MainToolButton:hover{background:#111114;border:2px solid #fff;} QToolButton#MainToolButton:checked{border:2px solid #7a4dff;background:#121017;}");auto activate=[this,settingsHost](int page){tabs->setCurrentIndex(page);tabs->show();settingsHost->setMinimumHeight(112);settingsHost->setMaximumHeight(QWIDGETSIZE_MAX);for(auto *button:tabCarousel->findChildren<QToolButton*>("CarouselTab"))if(button->toolTip()==tabs->tabText(page)+" settings")button->setChecked(true);if(auto *split=qobject_cast<QSplitter*>(settingsHost->parentWidget())){const int space=split->height();split->setSizes({qMax(300,space*3/4),qMax(112,space/4)});}};auto selectSubject=[this]{if(currentFile.isEmpty()||original.isNull())return;QImage source=original.convertToFormat(QImage::Format_RGBA8888);qint64 r=0,g=0,b=0,n=0;const int band=qMax(2,qMin(source.width(),source.height())/24);for(int y=0;y<source.height();++y)for(int x=0;x<source.width();++x)if(x<band||y<band||x>=source.width()-band||y>=source.height()-band){QColor pixel=source.pixelColor(x,y);r+=pixel.red();g+=pixel.green();b+=pixel.blue();++n;}const QColor key(n?r/n:0,n?g/n:255,n?b/n:0);QImage mask(source.size(),QImage::Format_Grayscale8);for(int y=0;y<source.height();++y)for(int x=0;x<source.width();++x){QColor pixel=source.pixelColor(x,y);const double distance=std::sqrt(std::pow((pixel.red()-key.red())/255.,2)+std::pow((pixel.green()-key.green())/255.,2)+std::pow((pixel.blue()-key.blue())/255.,2));mask.setPixel(x,y,qBound(0,qRound((distance-.10)/.18*255),255));}canvasLayers[currentFile].mask=mask;preview->setLayerMask(mask);layerStyle.keyColor=key;if(chromaKeyEnabled)chromaKeyEnabled->setChecked(true);status->setText("Subject selection created · refine with the brush tool");refresh();};auto addText=[this]{if(currentFile.isEmpty()||original.isNull()){showError("Import media before adding text.");return;}TimelineTrack track;track.type=TimelineTrack::Text;track.name="Text";track.text="Text";track.start=0;track.end=qMax(5.,media.duration);timelineTracks<<track;updateTrackPanel();status->setText("Editable text layer added");};auto addShape=[this]{if(currentFile.isEmpty()||original.isNull()){showError("Import media before adding a shape layer.");return;}TimelineTrack track;track.type=TimelineTrack::Image;track.name="Shape layer";track.image=QImage(original.size(),QImage::Format_ARGB32);track.image.fill(Qt::transparent);track.start=0;track.end=qMax(5.,media.duration);timelineTracks<<track;updateTrackPanel();status->setText("Transparent shape layer added");};auto makeTool=[&](const QString &name,const QString &file,const QString &tip,std::function<void()> action,const QList<QPair<QString,std::function<void()>>> &alternates){auto *tool=new QToolButton(toolHost);tool->setObjectName("MainToolButton");tool->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/"+file));tool->setIconSize(QSize(25,25));tool->setToolButtonStyle(Qt::ToolButtonIconOnly);tool->setFixedSize(46,46);tool->setToolTip(tip);tool->setContextMenuPolicy(Qt::CustomContextMenu);toolLayout->addWidget(tool);connect(tool,&QToolButton::clicked,this,action);connect(tool,&QWidget::customContextMenuRequested,this,[tool,alternates](const QPoint &point){QMenu menu(tool);for(const auto &alternate:alternates){auto *entry=menu.addAction(alternate.first);QObject::connect(entry,&QAction::triggered,tool,alternate.second);}menu.exec(tool->mapToGlobal(point));});};makeTool("Move","move tool.png","Move tool · set the active layer position on the Canvas tab",[activate,this]{activate(0);if(canvasX)canvasX->setFocus();status->setText("Move tool · adjust layer X and Y");},{{"Move layer",[activate,this]{activate(0);if(canvasX)canvasX->setFocus();}}});makeTool("Select","object selection.png","Object Selection · automatically creates an editable subject mask",[activate,selectSubject]{activate(2);selectSubject();},{{"Object Selection",[activate,selectSubject]{activate(2);selectSubject();}},{"Quick Selection Brush",[activate,this]{activate(2);preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);status->setText("Quick selection brush · paint the subject");}},{"Magic Wand / background key",[activate,this]{activate(1);preview->setEyedropper(true);status->setText("Sample the background color in the preview");}}});makeTool("Crop","crop tool.png","Crop tool · opens the canvas crop controls",[activate,this]{activate(0);if(zoom)zoom->setFocus();status->setText("Crop tool · adjust crop scale and safe bounds");},{{"Crop",[activate,this]{activate(0);if(zoom)zoom->setFocus();}},{"Perspective / frame",[activate]{activate(0);}}});makeTool("Sample","icon_color keying.png","Eyedropper · click the preview to sample a key color",[activate,this]{activate(1);preview->setEyedropper(true);status->setText("Eyedropper active · click a color in the preview");},{{"Eyedropper",[this]{preview->setEyedropper(true);}},{"Color key",[activate]{activate(1);}}});makeTool("Brush","brush tool.png","Selection Brush · paint into the editable layer mask",[activate,this]{activate(2);preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);status->setText("Selection brush add · drag in the preview");},{{"Brush add",[this]{preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);}},{"Brush subtract",[this]{preview->setMaskBrush(false,maskBrushSize?maskBrushSize->value():48);}}});makeTool("Text","horizontal type tool.png","Type tool · add an editable text track",[addText]{addText();},{{"Horizontal Type",addText},{"Vertical Type",addText}});makeTool("Shape","shape layer.png","Shape layer · add a transparent compositing layer",[addShape]{addShape();},{{"Rectangle",addShape},{"Ellipse",addShape},{"Custom Shape",addShape}});makeTool("Hand","hand tool.png","Hand tool · drag the preview to pan while zoomed",[this]{preview->setCursor(Qt::OpenHandCursor);status->setText("Hand tool · drag the preview to pan");},{{"Hand",[this]{preview->setCursor(Qt::OpenHandCursor);}},{"Reset view",[this]{preview->setViewZoom(1.0);}}});makeTool("Zoom","zoom in cursor.png","Zoom tool · increases preview magnification",[this]{preview->setViewZoom(1.5);status->setText("Zoom tool · scroll or use Preview Zoom to refine");},{{"Zoom in",[this]{preview->setViewZoom(1.5);}},{"Zoom out",[this]{preview->setViewZoom(1.0);}}});toolLayout->addStretch();settingsLayout->insertWidget(settingsLayout->indexOf(tabCarousel),toolRail);connect(preview,&PreviewWidget::colorSampled,this,[this](QColor color){layerStyle.keyColor=color;if(chromaKeyEnabled)chromaKeyEnabled->setChecked(true);status->setText("Sampled key color · "+color.name());refresh();});}}
+    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail");mainToolRail&&!mainToolRail->property("fluidPrimaryTools").toBool()){
+        mainToolRail->setProperty("fluidPrimaryTools",true);
+        auto *toolLayout=qobject_cast<QHBoxLayout*>(mainToolRail->widget()->layout());
+        for(auto *legacy:mainToolRail->findChildren<QToolButton*>("MainToolButton")){
+            auto *fluid=new FluidToolButton(mainToolRail->widget());
+            fluid->setObjectName("MainToolButton");fluid->setIcon(legacy->icon());fluid->setIconSize(legacy->iconSize());fluid->setToolButtonStyle(Qt::ToolButtonIconOnly);
+            fluid->setFixedSize(legacy->size());fluid->setToolTip(legacy->toolTip());fluid->setCheckable(legacy->isCheckable());fluid->setChecked(legacy->isChecked());
+            fluid->setContextMenuPolicy(Qt::CustomContextMenu);
+            if(toolLayout)toolLayout->replaceWidget(legacy,fluid);
+            connect(fluid,&QWidget::customContextMenuRequested,legacy,[legacy](const QPoint &point){
+                const QPoint global=legacy->mapToGlobal(point);QContextMenuEvent forwarded(QContextMenuEvent::Mouse,legacy->mapFromGlobal(global),global);QCoreApplication::sendEvent(legacy,&forwarded);
+            });
+            legacy->setObjectName("LegacyMainToolButton");legacy->hide();
+        }
+    }
     if(!artboardRail&&bottomDock&&layerDrawer){artboardRail=new QScrollArea(bottomDock);artboardRail->setObjectName("ArtboardRail");artboardRail->setWidgetResizable(true);artboardRail->setFrameShape(QFrame::NoFrame);artboardRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);artboardRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);artboardRail->setFixedHeight(70);artboardRailContent=new QWidget(artboardRail);auto *railLayout=new QHBoxLayout(artboardRailContent);railLayout->setContentsMargins(4,2,4,2);railLayout->setSpacing(8);railLayout->addStretch();artboardRail->setWidget(artboardRailContent);artboardRail->setStyleSheet("QScrollArea{background:#000;border:none;} QToolButton{background:#111114;border:1px solid #30303a;border-radius:12px;color:#fff;padding:5px 10px;text-align:left;} QToolButton:checked{border-color:#7a4dff;background:#17131e;} QToolButton:hover{border-color:#3ddcff;}");if(auto *dockLayout=qobject_cast<QVBoxLayout*>(bottomDock->layout()))dockLayout->insertWidget(dockLayout->indexOf(layerDrawer),artboardRail);}
     if(bottomDock){const int cardWidth=bottomDock->width();if(auto *tools=bottomDock->findChild<QWidget*>("BottomToolbarRail"))tools->setGeometry(0,0,cardWidth,44);if(auto *modes=bottomDock->findChild<QWidget*>("BottomModeRail"))modes->setGeometry(0,48,cardWidth,52);if(auto *panel=bottomDock->findChild<QWidget*>("LayerPanelRail"))panel->setGeometry(0,106,cardWidth,42);if(auto *toggle=bottomDock->findChild<QToolButton*>("LayerCardToggle"))toggle->setGeometry(0,154,cardWidth,26);if(auto *controls=bottomDock->findChild<QWidget*>("LayerCardSurfaceControls"))controls->setGeometry(0,180,cardWidth,106);if(auto *rail=bottomDock->findChild<QScrollArea*>("LayerCardSurfaceRail"))rail->setGeometry(0,304,cardWidth,62);}
     if(bottomDock){if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){const bool expanded=surface->property("layerExpanded").toBool();auto *shell=bottomDock->parentWidget();const int dockHeight=shell?qMax(190,qRound(shell->height()*(expanded?.65:.35))):(expanded?500:190);bottomDock->setFixedHeight(dockHeight);if(shell){bottomDock->setGeometry(16,qMax(0,shell->height()-dockHeight),qMax(1,shell->width()-32),dockHeight);if(auto *outer=qobject_cast<QVBoxLayout*>(shell->layout()))outer->setContentsMargins(16,12,16,dockHeight+12);}if(auto *controls=bottomDock->findChild<QWidget*>("LayerCardSurfaceControls"))controls->setVisible(expanded);if(auto *rail=bottomDock->findChild<QScrollArea*>("LayerCardSurfaceRail"))rail->setVisible(expanded);if(auto *active=bottomDock->findChild<QToolButton*>("LayerCardActiveArtboard"))active->setVisible(expanded);if(auto *add=bottomDock->findChild<QToolButton*>("LayerCardNewArtboard"))add->setVisible(expanded);}}
@@ -1328,6 +1356,20 @@ void MainWindow::updateLayerDrawer(){
     for(auto *tool:findChildren<QToolButton*>("MainToolButton")){tool->setFixedSize(40,40);tool->setIconSize(QSize(20,20));tool->setStyleSheet("QToolButton{background:#09090c;border:1px solid transparent;border-radius:20px;} QToolButton:hover{background:#15151a;border:1px solid transparent;} QToolButton:checked{background:#14111c;border:2px solid #7a4dff;}");}
     for(auto *tool:findChildren<QToolButton*>("NativeToolButton")){tool->setFixedSize(40,40);tool->setIconSize(QSize(20,20));tool->setStyleSheet("QToolButton{background:#09090c;border:1px solid transparent;border-radius:20px;} QToolButton:hover{background:#15151a;border:1px solid transparent;} QToolButton:checked{background:#14111c;border:2px solid #7a4dff;}");}
     if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail")){mainToolRail->setFixedHeight(52);mainToolRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);if(mainToolRail->widget())mainToolRail->widget()->setFixedWidth(520);auto *settingsHost=mainToolRail->parentWidget();auto resizeRailStack=[this,settingsHost]{const bool expanded=tabs&&tabs->isVisible();const int reserved=expanded?300:110;settingsHost->setMinimumHeight(reserved);settingsHost->setMaximumHeight(expanded?QWIDGETSIZE_MAX:reserved);if(auto *split=qobject_cast<QSplitter*>(settingsHost->parentWidget())){const int total=split->height();split->setSizes({qMax(240,total-reserved),reserved});}};if(!mainToolRail->property("railStackBound").toBool()){mainToolRail->setProperty("railStackBound",true);connect(tabs,&QTabWidget::currentChanged,mainToolRail,[resizeRailStack](int){QTimer::singleShot(0,[resizeRailStack]{resizeRailStack();});});for(auto *tool:mainToolRail->findChildren<QToolButton*>("MainToolButton"))connect(tool,&QToolButton::clicked,mainToolRail,[resizeRailStack]{QTimer::singleShot(0,[resizeRailStack]{resizeRailStack();});});}resizeRailStack();}
+    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail");mainToolRail&&!mainToolRail->property("fluidCenterBound").toBool()){
+        mainToolRail->setProperty("fluidCenterBound",true);
+        for(auto *tool:mainToolRail->findChildren<QToolButton*>()){
+            if(tool->objectName()!="MainToolButton"&&tool->objectName()!="NativeToolButton")continue;
+            connect(tool,&QToolButton::clicked,mainToolRail,[mainToolRail,tool]{
+                auto *bar=mainToolRail->horizontalScrollBar();
+                int targetX=tool->geometry().center().x()-mainToolRail->viewport()->width()/2;
+                targetX=qBound(bar->minimum(),targetX,bar->maximum());
+                auto *animation=new QPropertyAnimation(bar,"value",mainToolRail);
+                animation->setDuration(250);animation->setEasingCurve(QEasingCurve::OutCubic);animation->setEndValue(targetX);
+                animation->start(QAbstractAnimation::DeleteWhenStopped);
+            });
+        }
+    }
     // A settings rail is a fixed vertical stack, never an overlay.  Giving the
     // splitter an exact height keeps every rail fully painted and leaves the
     // preview in the remaining space.
@@ -1493,6 +1535,17 @@ void MainWindow::updateLayerDrawer(){
             }
             for(auto *control:mainToolRail->findChildren<QToolButton*>("NativeToolButton"))connect(control,&QToolButton::clicked,this,[mainToolRail,control]{for(auto *peer:mainToolRail->findChildren<QToolButton*>())if(peer->objectName()=="MainToolButton"||peer->objectName()=="NativeToolButton")peer->setChecked(peer==control);});
         }
+    }
+    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail");mainToolRail&&!mainToolRail->property("fluidNativeCenterBound").toBool()){
+        mainToolRail->setProperty("fluidNativeCenterBound",true);
+        for(auto *tool:mainToolRail->findChildren<QToolButton*>("NativeToolButton"))connect(tool,&QToolButton::clicked,mainToolRail,[mainToolRail,tool]{
+            auto *bar=mainToolRail->horizontalScrollBar();
+            int targetX=tool->geometry().center().x()-mainToolRail->viewport()->width()/2;
+            targetX=qBound(bar->minimum(),targetX,bar->maximum());
+            auto *animation=new QPropertyAnimation(bar,"value",mainToolRail);
+            animation->setDuration(250);animation->setEasingCurve(QEasingCurve::OutCubic);animation->setEndValue(targetX);
+            animation->start(QAbstractAnimation::DeleteWhenStopped);
+        });
     }
     if(!layerDrawer)return;
     // The persistent bottom surface is a Photoshop-style card navigator,

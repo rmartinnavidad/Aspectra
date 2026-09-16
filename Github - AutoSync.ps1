@@ -1,25 +1,31 @@
-# Set the path to your Aspectra root folder
+$ErrorActionPreference = "Continue"
 $repoPath = "C:\Users\rmart\Documents\Codex\2026-09-06\ki\outputs\Aspectra"
-cd $repoPath
+Set-Location -LiteralPath $repoPath
 
-Write-Host "Aspectra Auto-Sync is running..." -ForegroundColor Green
-
+Write-Host "Aspectra GitHub auto-sync is running..." -ForegroundColor Green
 while ($true) {
-    # Check if there are any changes
-    $status = git status --porcelain
-    
-    if ($status) {
-        Write-Host "Changes detected. Syncing to GitHub..." -ForegroundColor Yellow
-        
-        # Add, commit, and push
-        git add .
+    git fetch origin --prune
+
+    # Respect .gitignore so deploy folders, runtimes, and Windows metadata
+    # never become part of the source repository.
+    git add --all
+    git diff --cached --quiet
+    if ($LASTEXITCODE -ne 0) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         git commit -m "Auto-sync: $timestamp"
-        git push origin main
-        
-        Write-Host "Sync complete!" -ForegroundColor Green
     }
-    
-    # Wait 60 seconds before checking again
+
+    # Reconcile any upstream work before publishing this local source change.
+    git pull --rebase origin main
+    if ($LASTEXITCODE -eq 0) {
+        git push origin main
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Aspectra is synced: $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Green
+        }
+    } else {
+        Write-Warning "GitHub sync paused for a rebase conflict; resolve it in the repository before the next sync."
+        git rebase --abort
+    }
+
     Start-Sleep -Seconds 60
 }

@@ -75,7 +75,7 @@ void MainWindow::buildPowerFeatures(){
     auto hookSubRail=[this]{if(auto *rail=findChild<QScrollArea*>("SubSettingsRail")){rail->setWidgetResizable(false);rail->viewport()->setObjectName("SubSettingsViewport");rail->viewport()->installEventFilter(this);if(auto *content=rail->widget()){content->adjustSize();content->setMinimumWidth(qMax(rail->viewport()->width(),content->sizeHint().width()));}for(auto *icon:rail->findChildren<QToolButton*>("SubRailIcon"))icon->installEventFilter(this);}};QTimer::singleShot(0,this,hookSubRail);connect(tabs,&QTabWidget::currentChanged,this,[this,hookSubRail](int){QTimer::singleShot(0,this,hookSubRail);});
     // Every horizontally moving rail uses the same soft edge treatment.  The
     // content stays scrollable, but it never ends in a hard visual cut.
-    auto addRailFades=[](QScrollArea *rail){if(!rail||rail->property("edgeFades").toBool())return;rail->setProperty("edgeFades",true);auto *left=new QWidget(rail->viewport()),*right=new QWidget(rail->viewport());for(auto *fade:{left,right}){fade->setAttribute(Qt::WA_TransparentForMouseEvents);fade->raise();}left->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #000000,stop:.60 rgba(0,0,0,215),stop:1 rgba(0,0,0,0));");right->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0,0,0,0),stop:.40 rgba(0,0,0,215),stop:1 #000000);");auto update=[rail,left,right]{auto *view=rail->viewport();left->setGeometry(0,0,38,view->height());right->setGeometry(view->width()-38,0,38,view->height());auto *bar=rail->horizontalScrollBar();left->setVisible(bar->value()>0);right->setVisible(bar->value()<bar->maximum());left->raise();right->raise();};connect(rail->horizontalScrollBar(),&QScrollBar::valueChanged,rail,[update](int){update();});QTimer::singleShot(0,rail,update);};QTimer::singleShot(0,this,[this,addRailFades]{addRailFades(findChild<QScrollArea*>("SubSettingsRail"));addRailFades(artboardRail);});
+    auto addRailFades=[](QScrollArea *rail){if(!rail||rail->property("edgeFades").toBool())return;rail->setProperty("edgeFades",true);auto *left=new QWidget(rail->viewport()),*right=new QWidget(rail->viewport());for(auto *fade:{left,right}){fade->setAttribute(Qt::WA_TransparentForMouseEvents);fade->raise();}left->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #000000,stop:.60 rgba(0,0,0,215),stop:1 rgba(0,0,0,0));");right->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0,0,0,0),stop:.40 rgba(0,0,0,215),stop:1 #000000);");auto update=[rail,left,right]{auto *view=rail->viewport();left->setGeometry(0,0,38,view->height());right->setGeometry(view->width()-38,0,38,view->height());auto *bar=rail->horizontalScrollBar();left->setVisible(bar->value()>0);right->setVisible(bar->value()<bar->maximum());left->raise();right->raise();};connect(rail->horizontalScrollBar(),&QScrollBar::valueChanged,rail,[update](int){update();});QTimer::singleShot(0,rail,update);};QTimer::singleShot(0,this,[this,addRailFades]{addRailFades(findChild<QScrollArea*>("SubSettingsRail"));});
     gif=new QMovie(this);gif->setCacheMode(QMovie::CacheAll);
     connect(gif,&QMovie::frameChanged,this,[this](int frame){if(!isGif(currentFile))return;deliverFrame(gif->currentImage());double pos=gifTimes.value(frame)/1000.;timeline->setPosition(pos);timeLabel->setText(QString::number(pos,'f',2)+" / "+QString::number(media.duration,'f',2)+" s · GIF");if(rangePlayback&&pos>=outMarker->value()){rangePlayback=false;gif->setPaused(true);}});
     connect(gif,&QMovie::stateChanged,this,[this](QMovie::MovieState state){if(isGif(currentFile))playButton->setText(state==QMovie::Running?"Ⅱ Pause":"▶ Play");});
@@ -126,9 +126,6 @@ void MainWindow::buildPowerFeatures(){
         auto *workspace=settingsHost?qobject_cast<QSplitter*>(settingsHost->parentWidget()):nullptr;
         auto *stage=findChild<QWidget*>("StageHost");
         auto *mainPreview=findChild<QWidget*>("MainPreview");
-        auto *artboardRail=findChild<QScrollArea*>("ArtboardRail");
-        auto *artboardActions=findChild<QWidget*>("LayerCardArtboardActions");
-        auto *layerSurface=bottomDock?bottomDock->findChild<QWidget*>("LayerCardSurface"):nullptr;
         auto setFocusSurface=[](QWidget *surface,bool on){
             if(!surface)return;
             if(on){
@@ -163,7 +160,7 @@ void MainWindow::buildPowerFeatures(){
             if(subRail)subRail->show();
             if(addRail)addRail->show();
             setFocusSurface(findChild<QWidget*>("TopBar"),true);
-            setFocusSurface(mainPreview,true);setFocusSurface(stage,true);setFocusSurface(settingsHost,true);setFocusSurface(workspace,true);setFocusSurface(addRail,true);setFocusSurface(bottomDock,true);setFocusSurface(layerSurface,true);setFocusSurface(artboardRail,true);setFocusSurface(artboardActions,true);
+            setFocusSurface(mainPreview,true);setFocusSurface(stage,true);setFocusSurface(settingsHost,true);setFocusSurface(workspace,true);setFocusSurface(addRail,true);setFocusSurface(bottomDock,true);
             if(auto *top=findChild<QWidget*>("TopBar")){top->setStyleSheet("QWidget#TopBar,QWidget#HeaderActions,QLabel#HeaderLogo,QToolButton,QPushButton{background:transparent;border:none;color:#ffffff;}");setFocusSurface(top->findChild<QWidget*>("HeaderActions"),true);setFocusSurface(top->findChild<QWidget*>("HeaderLogo"),true);setFocusLogoWhite(top,true);for(auto *control:top->findChildren<QAbstractButton*>()){control->show();control->raise();}}
             if(preview&&focusShell&&!preview->property("focusPreviewAttached").toBool()){
                 const QRect startRect(normalPreviewHost?QRect(normalPreviewHost->mapTo(focusShell,QPoint{}),preview->size()):focusShell->rect());
@@ -207,7 +204,7 @@ void MainWindow::buildPowerFeatures(){
                 slider->setFixedWidth(0);
                 slider->hide();
             }
-            const QList<QWidget*> focusRails{toolRail,tabCarousel,subRail,addRail,bottomDock,artboardRail,artboardActions};
+            const QList<QWidget*> focusRails{toolRail,tabCarousel,subRail,addRail,bottomDock};
             for(auto *rail:focusRails)if(rail)for(auto *control:rail->findChildren<QToolButton*>()){
                 if(!control->property("focusIconStyleSaved").toBool()){control->setProperty("focusIconStyleSaved",true);control->setProperty("focusIconStyle",control->styleSheet());}
                 control->setStyleSheet("QToolButton{background:transparent;border:1px solid transparent;border-radius:20px;color:#ffffff;} QToolButton:hover{background:transparent;border:1px solid #ffffff;} QToolButton:checked{background:transparent;border:2px solid #eb4790;}");
@@ -226,8 +223,6 @@ void MainWindow::buildPowerFeatures(){
             if(subRail){subRail->show();subRail->raise();}
             if(addRail){addRail->show();addRail->raise();}
             if(bottomDock){bottomDock->show();bottomDock->raise();}
-            if(artboardRail){artboardRail->show();artboardRail->raise();}
-            if(artboardActions){artboardActions->show();artboardActions->raise();}
         }else if(settingsHost&&settingsHost->property("focusModeSaved").toBool()){
             const bool tabsWereVisible=settingsHost->property("focusTabsVisible").toBool();
             const bool carouselWasVisible=settingsHost->property("focusCarouselVisible").toBool();
@@ -238,7 +233,7 @@ void MainWindow::buildPowerFeatures(){
             if(tabs)tabs->setVisible(tabsWereVisible);
             if(addRail)addRail->show();
             setFocusSurface(findChild<QWidget*>("TopBar"),false);
-            setFocusSurface(mainPreview,false);setFocusSurface(stage,false);setFocusSurface(settingsHost,false);setFocusSurface(workspace,false);setFocusSurface(addRail,false);setFocusSurface(bottomDock,false);setFocusSurface(layerSurface,false);setFocusSurface(artboardRail,false);setFocusSurface(artboardActions,false);
+            setFocusSurface(mainPreview,false);setFocusSurface(stage,false);setFocusSurface(settingsHost,false);setFocusSurface(workspace,false);setFocusSurface(addRail,false);setFocusSurface(bottomDock,false);
             if(auto *top=findChild<QWidget*>("TopBar")){top->setStyleSheet({});setFocusSurface(top->findChild<QWidget*>("HeaderActions"),false);setFocusSurface(top->findChild<QWidget*>("HeaderLogo"),false);setFocusLogoWhite(top,false);}
             if(toolRail&&toolRail->property("focusRailStyleSaved").toBool()){toolRail->setStyleSheet(toolRail->property("focusRailStyle").toString());toolRail->setProperty("focusRailStyleSaved",false);if(auto *fade=toolRail->findChild<QWidget*>("MainToolRailLeftFade"))fade->show();if(auto *fade=toolRail->findChild<QWidget*>("MainToolRailRightFade"))fade->show();}
             for(auto *slider:findChildren<QSlider*>("SafeZoneSlider"))if(slider->property("focusSliderStyleSaved").toBool()){

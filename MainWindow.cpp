@@ -89,7 +89,7 @@ public:
     QVariantAnimation *rippleAnim=nullptr;
 
     explicit FluidToolButton(QWidget *parent=nullptr) : QToolButton(parent) {
-        setMouseTracking(true);
+        setMouseTracking(true);setStyleSheet("background: transparent; border: none;");
         hoverAnim=new QVariantAnimation(this);
         hoverAnim->setDuration(150);
         hoverAnim->setEasingCurve(QEasingCurve::OutQuad);

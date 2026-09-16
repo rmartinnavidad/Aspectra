@@ -356,7 +356,6 @@ QPushButton#TopExportButton {background:#9e7bff;border:none;border-radius:18px;c
 QPushButton#TopExportButton:hover {background:#b19aff;}
 QWidget#MainPreview {background:#111214;}
 PreviewWidget#creativeStage {background:#08090b;border:none;border-radius:18px;min-height:360px;}
-QWidget#BottomDock {background:#1a1c20;border-top:1px solid #2f3238;border-radius:0;}
 QScrollArea#DockScroll {background:transparent;}
 QToolButton#DockButton {background:transparent;border:none;border-radius:12px;color:#c4c8d0;font-size:9px;padding:2px;}
 QToolButton#DockButton:hover {background:#2b2e35;color:#ffffff;}
@@ -435,7 +434,7 @@ QToolButton#CarouselTab:checked,QToolButton#SubRailIcon:checked,QToolButton#Main
 /* Focus canvas: zooming the image removes panel surfaces while leaving the
    icon controls available.  It keeps the portrait editor visually immersive
    without turning the controls into modal overlays. */
-QWidget[immersivePreview="true"],QScrollArea[immersivePreview="true"],QWidget#BottomPinnedDock[immersivePreview="true"] {background:transparent;border:none;}
+QWidget[immersivePreview="true"],QScrollArea[immersivePreview="true"],QWidget#BottomRailsHost {background:transparent;border:none;}
 )";}
 }
 static void psdBytes(QDataStream &stream,const QByteArray &bytes){stream.writeRawData(bytes.constData(),bytes.size());}
@@ -540,9 +539,10 @@ void MainWindow::buildUi(){
     // Internal visual-regression state. Normal launches ignore these flags; they make it
     // possible to capture the same native UI states used in the specification document.
     const QString shotArg=QCoreApplication::arguments().filter(QRegularExpression("^--ui-shot=")).value(0);const QString shotName=shotArg.section('=',1);const QStringList shotPages{"canvas","adjust","select","trace","effects","video","texture","pattern","export"};const int shotPage=shotPages.indexOf(shotName);if(shotPage>=0)QTimer::singleShot(0,this,[this,shotPage]{tabs->setCurrentIndex(shotPage);});
-    // One layout-owned bottom stack. The Layers panel has no UI until it is rebuilt.
+    // The bottom icon rails have no card or panel surface beneath them.
     bottomDock=new QWidget(shell);
-    bottomDock->setObjectName("BottomPinnedDock");
+    bottomDock->setObjectName("BottomRailsHost");
+    bottomDock->setStyleSheet("QWidget#BottomRailsHost{background:transparent;border:none;}");
     bottomDock->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Maximum);
     auto *bottomLayout=new QVBoxLayout(bottomDock);
     bottomLayout->setContentsMargins(0,0,0,0);
@@ -568,14 +568,14 @@ void MainWindow::buildUi(){
     panelLayout->setContentsMargins(0,0,0,0);
     panelLayout->setSpacing(10);
     panelLayout->addStretch();
-    for(const auto &entry:QList<QPair<QString,QString>>{{"shape layer.png","Layers"},{"icon_color_.png","Color"},{"horizontal type tool.png","Character"},{"panel settings.png","Properties"},{"editor_adjustments.png","Adjustments"}}){
+    for(const auto &entry:QList<QPair<QString,QString>>{{"icon_color_.png","Color"},{"horizontal type tool.png","Character"},{"panel settings.png","Properties"},{"editor_adjustments.png","Adjustments"}}){
         auto *panel=new FluidToolButton(panelRail);
         panel->setIcon(whiteIcon(panelIconRoot+entry.first));
         panel->setIconSize(QSize(19,19));
         panel->setFixedSize(38,38);
         panel->setToolTip(entry.second);
         panelLayout->addWidget(panel);
-        if(entry.second!="Layers")connect(panel,&QToolButton::clicked,this,[this,name=entry.second]{
+        connect(panel,&QToolButton::clicked,this,[this,name=entry.second]{
             const QString target=name=="Color"||name=="Adjustments"?"Adjust":name=="Character"?"Canvas":"Canvas";
             for(auto *tab:tabCarousel->findChildren<QToolButton*>("CarouselTab"))
                 if(tab->toolTip()==target+" settings"){tab->click();break;}

@@ -117,7 +117,7 @@ void MainWindow::buildPowerFeatures(){
     connect(preview,&PreviewWidget::viewZoomChanged,this,[this,normalPreviewHost,focusShell](double value){
         // Preview zoom is a deliberate focus mode: the image owns the portrait
         // workspace.  The tool rail remains available, but the settings drawer
-        // and layer card never sit over the media.
+        // never sits over the media.
         const bool immersive=value>1.04;
         auto *toolRail=findChild<QScrollArea*>("MainToolRail");
         auto *subRail=findChild<QScrollArea*>("SubSettingsRail");

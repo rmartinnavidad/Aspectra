@@ -11,12 +11,27 @@
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QSaveFile>
+#include <QDateTime>
+#include <QTimer>
 #include <QVideoFrame>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <dwmapi.h>
 #endif
 namespace {
+// Bottom icon-rail baseline.  These values are intentionally the sole
+// runtime source of truth: do not change one rail independently.
+namespace BottomRailMetrics {
+inline constexpr int gap = 1;
+inline constexpr int toolbarY = 0;
+inline constexpr int toolbarHeight = 40;
+inline constexpr int modesY = toolbarY + toolbarHeight + gap;
+inline constexpr int modesHeight = 48;
+inline constexpr int panelsY = modesY + modesHeight + gap;
+inline constexpr int panelsHeight = 40;
+static_assert(modesY == 41 && panelsY == 90,
+              "Keep the saved one-pixel icon-rail baseline intact.");
+}
 class TapRelay final : public QObject {
 public:
     explicit TapRelay(std::function<void()> callback,QObject *parent=nullptr):QObject(parent),callback(std::move(callback)){}
@@ -78,84 +93,112 @@ private:
 };
 class FluidToolButton : public QToolButton {
 public:
-    qreal m_hoverProgress=0.0;
-    qreal m_clickScale=1.0;
-    qreal m_rippleRadius=0.0;
+    qreal m_hoverProgress = 0.0;
+    qreal m_clickScale = 1.0;
+    qreal m_rippleRadius = 0.0;
     QPointF m_parallax;
     QPointF m_clickPos;
-    QVariantAnimation *hoverAnim=nullptr;
-    QVariantAnimation *clickAnim=nullptr;
-    QVariantAnimation *parallaxAnim=nullptr;
-    QVariantAnimation *rippleAnim=nullptr;
+    QVariantAnimation *hoverAnim = nullptr;
+    QVariantAnimation *clickAnim = nullptr;
+    QVariantAnimation *parallaxAnim = nullptr;
+    QVariantAnimation *rippleAnim = nullptr;
 
-    explicit FluidToolButton(QWidget *parent=nullptr) : QToolButton(parent) {
-        setMouseTracking(true);setStyleSheet("background: transparent; border: none;");
-        hoverAnim=new QVariantAnimation(this);
+    explicit FluidToolButton(QWidget *parent = nullptr) : QToolButton(parent) {
+        setMouseTracking(true);
+        setStyleSheet("background: transparent; border: none;");
+        hoverAnim = new QVariantAnimation(this);
         hoverAnim->setDuration(150);
         hoverAnim->setEasingCurve(QEasingCurve::OutQuad);
-        connect(hoverAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_hoverProgress=value.toReal();update();});
-        clickAnim=new QVariantAnimation(this);
+        connect(hoverAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
+            m_hoverProgress = value.toReal();
+            update();
+        });
+        clickAnim = new QVariantAnimation(this);
         clickAnim->setDuration(150);
         clickAnim->setEasingCurve(QEasingCurve::InQuad);
-        connect(clickAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_clickScale=value.toReal();update();});
-        parallaxAnim=new QVariantAnimation(this);
+        connect(clickAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) { m_clickScale = value.toReal(); update(); });
+        parallaxAnim = new QVariantAnimation(this);
         parallaxAnim->setDuration(250);
         parallaxAnim->setEasingCurve(QEasingCurve::OutBack);
-        connect(parallaxAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_parallax=value.toPointF();update();});
-        rippleAnim=new QVariantAnimation(this);
+        connect(parallaxAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) { m_parallax = value.toPointF(); update(); });
+        rippleAnim = new QVariantAnimation(this);
         rippleAnim->setDuration(300);
         rippleAnim->setEasingCurve(QEasingCurve::OutQuad);
-        connect(rippleAnim,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){m_rippleRadius=value.toReal();update();});
-        connect(rippleAnim,&QVariantAnimation::finished,this,[this]{m_rippleRadius=0.0;update();});
+        connect(rippleAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) { m_rippleRadius = value.toReal(); update(); });
+        connect(rippleAnim, &QVariantAnimation::finished, this, [this] { m_rippleRadius = 0.0; update(); });
     }
 protected:
     void enterEvent(QEnterEvent *event) override {
-        hoverAnim->stop();hoverAnim->setStartValue(m_hoverProgress);hoverAnim->setEndValue(1.0);hoverAnim->start();
+        hoverAnim->stop(); hoverAnim->setStartValue(m_hoverProgress); hoverAnim->setEndValue(1.0); hoverAnim->start();
         QToolButton::enterEvent(event);
     }
     void leaveEvent(QEvent *event) override {
-        hoverAnim->stop();hoverAnim->setStartValue(m_hoverProgress);hoverAnim->setEndValue(0.0);hoverAnim->start();
-        parallaxAnim->stop();parallaxAnim->setStartValue(m_parallax);parallaxAnim->setEndValue(QPointF{});parallaxAnim->start();
+        hoverAnim->stop(); hoverAnim->setStartValue(m_hoverProgress); hoverAnim->setEndValue(0.0); hoverAnim->setEasingCurve(QEasingCurve::OutCubic); hoverAnim->start();
+        parallaxAnim->stop(); parallaxAnim->setStartValue(m_parallax); parallaxAnim->setEndValue(QPointF(0, 0)); parallaxAnim->start();
         QToolButton::leaveEvent(event);
     }
     void mousePressEvent(QMouseEvent *event) override {
-        m_clickPos=event->position();
-        clickAnim->stop();clickAnim->setEasingCurve(QEasingCurve::InQuad);clickAnim->setStartValue(m_clickScale);clickAnim->setEndValue(.88);clickAnim->start();
-        rippleAnim->stop();rippleAnim->setStartValue(0.0);rippleAnim->setEndValue(width()*1.5);rippleAnim->start();
+        m_clickPos = event->position();
+        clickAnim->stop(); clickAnim->setEasingCurve(QEasingCurve::InQuad); clickAnim->setStartValue(m_clickScale); clickAnim->setEndValue(.88); clickAnim->start();
+        rippleAnim->stop(); rippleAnim->setStartValue(0.0); rippleAnim->setEndValue(width() * 1.5); rippleAnim->start();
         QToolButton::mousePressEvent(event);
     }
     void mouseReleaseEvent(QMouseEvent *event) override {
-        clickAnim->stop();clickAnim->setEasingCurve(QEasingCurve::OutElastic);clickAnim->setStartValue(m_clickScale);clickAnim->setEndValue(1.0);clickAnim->start();
+        clickAnim->stop(); clickAnim->setEasingCurve(QEasingCurve::OutElastic); clickAnim->setStartValue(m_clickScale); clickAnim->setEndValue(1.0); clickAnim->start();
         QToolButton::mouseReleaseEvent(event);
     }
     void mouseMoveEvent(QMouseEvent *event) override {
-        const QPointF center(width()/2.0,height()/2.0),delta=event->position()-center;
-        m_parallax={qBound(-4.0,delta.x()*.15,4.0),qBound(-4.0,delta.y()*.15,4.0)};
+        const QPointF center(width() / 2.0, height() / 2.0), delta = event->position() - center;
+        m_parallax = QPointF(qBound(-4.0, delta.x() * 0.15, 4.0), qBound(-4.0, delta.y() * 0.15, 4.0));
         update();
         QToolButton::mouseMoveEvent(event);
     }
     void paintEvent(QPaintEvent *) override {
-        QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);painter.setRenderHint(QPainter::SmoothPixmapTransform);
-        const QRectF bounds=rect().adjusted(1,1,-1,-1);
-        QColor baseColor=isChecked()?QColor(122,77,255,40):QColor(9,9,12,200);
-        if(m_hoverProgress>0)baseColor=baseColor.lighter(qRound(100+15*m_hoverProgress));
-        QPainterPath clipPath;clipPath.addRoundedRect(bounds,bounds.height()/2.0,bounds.height()/2.0);
-        painter.save();painter.setClipPath(clipPath);painter.fillPath(clipPath,baseColor);
-        if(m_rippleRadius>0){QRadialGradient ripple(m_clickPos,m_rippleRadius);ripple.setColorAt(0,QColor(255,255,255,60));ripple.setColorAt(1,QColor(255,255,255,0));painter.fillPath(clipPath,ripple);}
-        painter.restore();
-        painter.setPen(QPen(isChecked()?QColor(122,77,255):QColor(255,255,255,qRound(20+40*m_hoverProgress)),isChecked()?2.0:1.0));painter.drawPath(clipPath);
-        painter.save();painter.translate(bounds.center());painter.scale(m_clickScale,m_clickScale);painter.translate(m_parallax);painter.translate(-bounds.center());
-        if(!icon().isNull()){
-            const QPixmap pixmap=icon().pixmap(iconSize());
-            painter.drawPixmap(bounds.center()-QPointF(pixmap.width()/2.0,pixmap.height()/2.0),pixmap);
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        const QRectF bounds = rect().adjusted(1, 1, -1, -1);
+
+        // The background is deliberately rendered in untransformed widget
+        // coordinates. It can never inherit icon-scale or parallax state.
+        p.save();
+        QPainterPath clipPath;
+        clipPath.addRoundedRect(bounds, 10.0, 10.0);
+        QColor baseColor = isChecked() ? QColor(122, 77, 255, 40) : QColor(9, 9, 12, 200);
+        if (m_hoverProgress > 0) baseColor = baseColor.lighter(qRound(100 + 15 * m_hoverProgress));
+        p.fillPath(clipPath, baseColor);
+        if (m_rippleRadius > 0) {
+            QRadialGradient ripple(m_clickPos, m_rippleRadius);
+            ripple.setColorAt(0, QColor(255, 255, 255, 60));
+            ripple.setColorAt(1, QColor(255, 255, 255, 0));
+            p.fillPath(clipPath, ripple);
         }
-        painter.restore();
+        p.setPen(QPen(isChecked() ? QColor(122, 77, 255) : QColor(255, 255, 255, qRound(20 + 40 * m_hoverProgress)), isChecked() ? 2.0 : 1.0));
+        p.drawPath(clipPath);
+        p.restore();
+
+        // The icon gets its own centered coordinate system.  Its transform
+        // cannot move the painted background or accumulate across frames.
+        p.save();
+        p.translate(bounds.center());
+        p.scale(m_clickScale, m_clickScale);
+        p.translate(m_parallax);
+        if (!icon().isNull()) {
+            // Rail icons start 25% smaller, then grow visually on hover
+            // without ever changing their widget geometry or clip region.
+            const qreal iconScale = 0.75 + 0.50 * m_hoverProgress;
+            const QSize dynamicIconSize = iconSize() * iconScale;
+            const QPixmap pix = icon().pixmap(dynamicIconSize);
+            p.drawPixmap(QRectF(-pix.width()/2.0, -pix.height()/2.0, pix.width(), pix.height()), pix, pix.rect());
+        }
+        p.restore();
     }
 };
-FluidToolButton *fluidizeRailButton(QToolButton *legacy){
+FluidToolButton *fluidizeRailButton(QToolButton *legacy,bool isDockMode=true){
     if(!legacy)return nullptr;
     if(auto *fluid=dynamic_cast<FluidToolButton*>(legacy))return fluid;
     auto *host=legacy->parentWidget();if(!host)return nullptr;
+    Q_UNUSED(isDockMode);
     auto *fluid=new FluidToolButton(host);
     fluid->setObjectName(legacy->objectName());fluid->setText(legacy->text());fluid->setIcon(legacy->icon());fluid->setIconSize(legacy->iconSize());
     fluid->setToolButtonStyle(legacy->toolButtonStyle());fluid->setToolTip(legacy->toolTip());fluid->setStatusTip(legacy->statusTip());fluid->setWhatsThis(legacy->whatsThis());
@@ -169,10 +212,33 @@ FluidToolButton *fluidizeRailButton(QToolButton *legacy){
     legacy->hide();
     return fluid;
 }
-void fluidizeRailButtons(QWidget *host){
+void fluidizeRailButtons(QWidget *host,bool isDockMode=true){
     if(!host)return;
     const auto legacyButtons=host->findChildren<QToolButton*>();
-    for(auto *button:legacyButtons)fluidizeRailButton(button);
+    for(auto *button:legacyButtons)fluidizeRailButton(button,isDockMode);
+}
+void provideFluidRailRoom(QWidget *rail){
+    if(!rail)return;
+    if(auto *scroll=qobject_cast<QScrollArea*>(rail)){
+        scroll->setFixedHeight(54);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->viewport()->setStyleSheet("background: transparent; border: none;");
+        if(auto *host=scroll->widget()){
+            host->setMinimumHeight(0);
+            host->setMaximumHeight(QWIDGETSIZE_MAX);
+            if(auto *layout=qobject_cast<QHBoxLayout*>(host->layout())){
+                for(int index=layout->count()-1;index>=0;--index)if(layout->itemAt(index)->spacerItem())delete layout->takeAt(index);
+                layout->setAlignment(Qt::AlignVCenter|Qt::AlignHCenter);
+                layout->setContentsMargins(8,4,8,4);
+            }
+        }
+    }else if(auto *layout=qobject_cast<QHBoxLayout*>(rail->layout())){
+        rail->setFixedHeight(54);
+        for(int index=layout->count()-1;index>=0;--index)if(layout->itemAt(index)->spacerItem())delete layout->takeAt(index);
+        layout->setAlignment(Qt::AlignVCenter|Qt::AlignHCenter);
+        layout->setContentsMargins(8,4,8,4);
+    }
 }
 class SettingRailButton final : public FluidToolButton {
 public:
@@ -184,18 +250,6 @@ protected:
     void paintEvent(QPaintEvent *event) override {FluidToolButton::paintEvent(event);if(!selected)return;QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);const QRectF circle=rect().adjusted(2,2,-2,-2);const double amount=qBound(0.,double(value-minimum)/double(maximum-minimum),1.);const QColor fill=QColor::fromHsvF(.38+.20*amount,.78,1.0);painter.setPen(QPen(fill,2.2));painter.setBrush(QColor("#09090c"));painter.drawEllipse(circle);painter.setPen(Qt::NoPen);painter.setBrush(fill);painter.drawPie(circle,90*16,-qRound(amount*5760));painter.setPen(Qt::white);painter.setFont(QFont("Segoe UI",10,QFont::Bold));painter.drawText(circle,Qt::AlignCenter,QString::number(value));}
 private:
     QString glyph;QIcon icon;int minimum=0,maximum=100,value=0;bool selected=false;
-};
-class LayerRowButton final : public QToolButton {
-public:
-    std::function<void()> doubleClick;
-    explicit LayerRowButton(const QString &name,const QIcon &icon,QWidget *parent=nullptr):QToolButton(parent){setObjectName("LayerRowButton");setText(name);setIcon(icon);setIconSize(QSize(24,24));setToolButtonStyle(Qt::ToolButtonTextBesideIcon);setCursor(Qt::PointingHandCursor);setFixedHeight(48);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);}
-protected:
-    void mouseDoubleClickEvent(QMouseEvent *event) override {if(doubleClick)doubleClick();QToolButton::mouseDoubleClickEvent(event);}
-};
-class LayerRowWidget final : public QWidget {
-public:
-    QToolButton *eyeButton=nullptr;LayerRowButton *actionButton=nullptr;
-    LayerRowWidget(const QString &name,const QIcon &eye,const QIcon &kind,QWidget *parent=nullptr):QWidget(parent){setFixedHeight(52);auto *layout=new QHBoxLayout(this);layout->setContentsMargins(2,2,2,2);layout->setSpacing(4);eyeButton=new QToolButton(this);eyeButton->setObjectName("LayerEyeButton");eyeButton->setIcon(eye);eyeButton->setIconSize(QSize(22,22));eyeButton->setToolButtonStyle(Qt::ToolButtonIconOnly);eyeButton->setCheckable(true);eyeButton->setChecked(true);eyeButton->setToolTip("Toggle layer visibility");eyeButton->setFixedSize(48,48);layout->addWidget(eyeButton);actionButton=new LayerRowButton(name,kind,this);layout->addWidget(actionButton,1);}
 };
 QIcon whiteIcon(const QString &path);
 QIcon controlIcon(const QString &text){
@@ -303,15 +357,6 @@ QPushButton#TopExportButton:hover {background:#b19aff;}
 QWidget#MainPreview {background:#111214;}
 PreviewWidget#creativeStage {background:#08090b;border:none;border-radius:18px;min-height:360px;}
 QWidget#BottomDock {background:#1a1c20;border-top:1px solid #2f3238;border-radius:0;}
-/* Bottom inspector cards: shared geometry for Artboards, Groups, Layers and
-   Properties.  The card changes its contents; it never overlays the stage. */
-QLabel#LayerCardTitle {color:#ffffff;font-size:10px;font-weight:700;letter-spacing:1.2px;padding:5px 10px;}
-QTreeWidget#LayerDrawer {background:transparent;border:none;outline:none;padding:2px 8px;}
-QTreeWidget#LayerDrawer::branch {background:transparent;}
-QToolButton#LayerRowButton {background:#111114;border:1px solid #303038;border-radius:14px;color:#ffffff;text-align:left;padding:0 12px;min-height:48px;}
-QToolButton#LayerRowButton:hover {background:#18181e;border-color:#ffffff;}
-QToolButton#LayerEyeButton {background:#111114;border:1px solid #303038;border-radius:14px;min-width:48px;min-height:48px;}
-QToolButton#LayerEyeButton:checked {border-color:#3ddcff;background:#121821;}
 QScrollArea#DockScroll {background:transparent;}
 QToolButton#DockButton {background:transparent;border:none;border-radius:12px;color:#c4c8d0;font-size:9px;padding:2px;}
 QToolButton#DockButton:hover {background:#2b2e35;color:#ffffff;}
@@ -358,16 +403,6 @@ QToolButton#CarouselTab:hover {background:#111114;border:2px solid #ffffff;}
 QToolButton#CarouselTab:checked {background:#000000;border:2px solid #7a4dff;}
 QListWidget#BatchStrip::item,QListWidget#BatchStrip::item:selected {background:#000000;color:#ffffff;}
 QListWidget#BatchStrip::item:selected {border:1px solid #3ddcff;}
-QTreeWidget#LayerDrawer {background:#000000;border:none;outline:0;padding:0;}
-QTreeWidget#LayerDrawer::item {background:#111114;border:1px solid #292932;border-radius:12px;margin:2px 4px;padding:3px 7px;min-height:48px;}
-QTreeWidget#LayerDrawer::item:selected {background:#17141d;border-color:#7a4dff;color:#ffffff;}
-QTreeWidget#LayerDrawer::item:hover {border-color:#3ddcff;}
-QToolButton#LayerRowButton {background:#111114;border:1px solid #2d2d37;border-radius:14px;color:#ffffff;text-align:left;padding:8px 14px;margin:1px 3px;font-size:13px;font-weight:600;}
-QToolButton#LayerRowButton:hover {background:#18151d;border-color:#3ddcff;}
-QToolButton#LayerRowButton:checked {background:#17131e;border-color:#7a4dff;}
-QToolButton#LayerEyeButton {background:transparent;border:none;border-radius:23px;}
-QToolButton#LayerEyeButton:hover {background:#1a1a21;}
-QToolButton#LayerEyeButton:!checked {opacity:.35;}
 QSplitter#PreviewSettingsSplit::handle:vertical {height:12px;background:#000000;border:none;}
 QSplitter#PreviewSettingsSplit::handle:vertical:hover {background:#000000;border:none;}
 QLabel#SliderValue {min-width:26px;min-height:26px;max-width:42px;max-height:42px;background:#ffffff;color:#000000;border-radius:13px;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 3px;}
@@ -412,7 +447,13 @@ static bool writeLayeredPsd(const QString &path,const QStringList &sources,QSize
 MainWindow::MainWindow(QWidget *parent):AspectraWindow(parent){
     setWindowTitle("Aspectra X");setWindowIcon(QIcon(":/brand/logo.png"));setWindowFlags(Qt::Window|Qt::WindowTitleHint|Qt::WindowSystemMenuHint|Qt::WindowMinimizeButtonHint|Qt::WindowCloseButtonHint);QScreen *screen=QGuiApplication::screenAt(QCursor::pos());if(!screen)screen=QGuiApplication::primaryScreen();const QRect available=screen->availableGeometry();const int initialHeight=qMax(1,available.height()-40);const int initialWidth=qMax(1,qRound(initialHeight*9.0/16.0));setFixedSize(initialWidth,initialHeight);move(available.center()-QPoint(initialWidth/2,initialHeight/2));QTimer::singleShot(0,this,[this]{QScreen *target=QGuiApplication::screenAt(QCursor::pos());if(!target)target=QGuiApplication::primaryScreen();const QRect work=target->availableGeometry();const QSize chrome=frameGeometry().size()-size();const int outerHeight=work.height(),outerWidth=qRound(outerHeight*9.0/16.0);setFixedSize(qMax(1,outerWidth-chrome.width()),qMax(1,outerHeight-chrome.height()));move(work.center()-QPoint(outerWidth/2,outerHeight/2));});setAcceptDrops(true);
     buildUi();qApp->installEventFilter(this);modelRail=new FluidToolButton(tabCarousel->widget());modelRail->setObjectName("CarouselTab");modelRail->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/smart object.png"));modelRail->setIconSize(QSize(28,28));modelRail->setToolButtonStyle(Qt::ToolButtonIconOnly);modelRail->setToolTip("Model settings");modelRail->setCheckable(true);modelRail->setFixedSize(48,48);modelRail->installEventFilter(this);if(auto *railLayout=qobject_cast<QHBoxLayout*>(tabCarousel->widget()->layout()))railLayout->insertWidget(qMax(0,railLayout->count()-2),modelRail);connect(modelRail,&QToolButton::clicked,this,[this]{for(auto *button:tabCarousel->findChildren<QToolButton*>("CarouselTab"))if(button!=modelRail)button->setChecked(false);modelRail->setChecked(true);tabs->setCurrentIndex(9);tabs->show();if(auto *host=tabs->parentWidget()){host->setMinimumHeight(112);host->setMaximumHeight(QWIDGETSIZE_MAX);}});setStyleSheet(appStyle());move(available.center()-rect().center());
-    for(const QString &railName:{QString("BottomToolbarRail"),QString("BottomModeRail"),QString("LayerPanelRail"),QString("LayerCardArtboardActions")})if(auto *rail=findChild<QWidget*>(railName))fluidizeRailButtons(rail);
+    for(const QString &railName:{QString("AddIconRail"),QString("TabsCarousel"),QString("SubSettingsRail"),QString("MainToolRail"),QString("BottomToolbarRail"),QString("BottomModeRail"),QString("BottomPanelRail")}){
+        if(auto *rail=findChild<QWidget*>(railName)){
+            fluidizeRailButtons(rail,true);
+            const bool needsExpandedViewport=railName=="AddIconRail"||railName=="TabsCarousel"||railName=="SubSettingsRail"||railName=="MainToolRail"||railName=="BottomToolbarRail"||railName=="BottomModeRail"||railName=="BottomPanelRail";
+            if(needsExpandedViewport)provideFluidRailRoom(rail);
+        }
+    }
     player=new QMediaPlayer(this);audio=new QAudioOutput(this);sink=new QVideoSink(this);player->setAudioOutput(audio);player->setVideoSink(sink);audio->setVolume(.7);compositionTimer.setInterval(16);connect(&compositionTimer,&QTimer::timeout,this,[this]{if(!compositionMode||VideoProcessor::isVideo(currentFile))return;compositionPosition+=.016;if(compositionPosition>=media.duration)compositionPosition=0;timeline->setPosition(compositionPosition);timeLabel->setText(clockText(compositionPosition)+" / "+clockText(media.duration));refresh();});buildPowerFeatures();auto *colorTabs=qobject_cast<QTabWidget*>(tabs->widget(1));if(colorTabs&&colorTabs->count()>4){auto *layout=qobject_cast<QVBoxLayout*>(colorTabs->widget(4)->layout());auto extra=[&](QString name,QSlider **slider,int minimum,int maximum,int value,QString tip){auto *line=new QHBoxLayout;line->addWidget(label(name));*slider=new QSlider(Qt::Horizontal);(*slider)->setRange(minimum,maximum);(*slider)->setValue(value);(*slider)->setToolTip(tip);line->addWidget(*slider,1);layout->insertLayout(qMax(0,layout->count()-1),line);connect(*slider,&QSlider::valueChanged,this,&MainWindow::refresh);};extra("Matte choke / expand",&keyMatteBiasSlider,-50,50,0,"Negative expands the keyed-out area; positive protects more edge detail.");extra("Matte clean black",&keyCleanBlackSlider,0,100,0,"Forces very transparent matte pixels fully transparent.");extra("Matte clean white",&keyCleanWhiteSlider,0,100,0,"Forces very opaque matte pixels fully opaque.");}
     auto *pasteImageShortcut=new QShortcut(QKeySequence::Paste,this);connect(pasteImageShortcut,&QShortcut::activated,this,[this]{const int index=trackList?trackList->currentRow():-1;if(index<0||index>=timelineTracks.size()||timelineTracks[index].type!=TimelineTrack::Image)return;const QImage image=QGuiApplication::clipboard()->image();if(image.isNull()){status->setText("Clipboard does not contain an image");return;}auto &track=timelineTracks[index];track.image=image.copy();track.source={};track.name="Clipboard image";track.start=qMax(0.,player?player->position()/1000.:0.);track.end=qMax(track.start+.01,media.duration);status->setText("Clipboard image placed on selected image track");updateTrackPanel();refresh();});
     auto *frameArea=qobject_cast<QScrollArea*>(tabs->widget(0));if(frameArea){auto *frameLayout=qobject_cast<QVBoxLayout*>(frameArea->widget()->layout());perImageOverride=new QCheckBox("Per-image adjustment override");perImageOverride->setToolTip("Stores the current color, keying, crop, and style controls only on this batch item and restores them when you return.");frameLayout->insertWidget(0,perImageOverride);connect(perImageOverride,&QCheckBox::toggled,this,[this](bool on){if(applyingLayerOverride||currentFile.isEmpty())return;auto &layer=canvasLayers[currentFile];layer.hasOverride=on;if(on)layer.overrideAdjustments=adjustments();status->setText(on?"Per-image override enabled":"Using shared batch adjustments");});}
@@ -499,182 +540,65 @@ void MainWindow::buildUi(){
     // Internal visual-regression state. Normal launches ignore these flags; they make it
     // possible to capture the same native UI states used in the specification document.
     const QString shotArg=QCoreApplication::arguments().filter(QRegularExpression("^--ui-shot=")).value(0);const QString shotName=shotArg.section('=',1);const QStringList shotPages{"canvas","adjust","select","trace","effects","video","texture","pattern","export"};const int shotPage=shotPages.indexOf(shotName);if(shotPage>=0)QTimer::singleShot(0,this,[this,shotPage]{tabs->setCurrentIndex(shotPage);});
-    bottomDock=new QWidget(shell);bottomDock->setObjectName("BottomPinnedDock");bottomDock->setFixedHeight(330);auto *bottomLayout=new QVBoxLayout(bottomDock);bottomLayout->setContentsMargins(0,4,0,0);bottomLayout->setSpacing(4);batchLabel=label("No media imported","muted");batchLabel->hide();status=label("Ready · all adjustments are live","muted");status->hide();thumbnail=new QLabel;thumbnail->hide();info=label("No media","muted");info->hide();const QString layerIconRoot="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";auto makeLayerIcon=[&](const QString &file,const QString &tip,bool checkable=false){auto *control=new QToolButton(bottomDock);control->setIcon(whiteIcon(layerIconRoot+file));control->setIconSize(QSize(20,20));control->setFixedSize(32,32);control->setCheckable(checkable);control->setToolTip(tip);return control;};auto *layerHeader=row(bottomLayout,6);auto *screenMode=new QComboBox;screenMode->addItems({"Normal","Multiply","Screen","Overlay","Lighten","Darken"});screenMode->setMinimumWidth(172);screenMode->setToolTip("Blend mode for the selected layer.");layerHeader->addWidget(screenMode,2);layerHeader->addWidget(makeLayerIcon("editor_opacity.png","Opacity"));auto *opacity=new GradientSlider;opacity->setRange(0,100);opacity->setValue(100);opacity->setToolTip("Selected layer opacity.");layerHeader->addWidget(opacity,3);layerHeader->addWidget(makeLayerIcon("editor_blend.png","Fill"));auto *fill=new GradientSlider;fill->setRange(0,100);fill->setValue(100);fill->setToolTip("Selected layer fill. Effects can remain visible when fill is lowered.");layerHeader->addWidget(fill,3);auto *lockRow=row(bottomLayout,5);lockRow->addWidget(label("Lock:","muted"));auto *lockTransparency=makeLayerIcon("background eraser tool.png","Lock transparent pixels",true),*lockImage=makeLayerIcon("smart object.png","Lock image pixels",true),*lockPosition=makeLayerIcon("move tool.png","Lock position",true),*lockArtboard=makeLayerIcon("artboard tool.png","Lock artboard",true),*lockAll=makeLayerIcon("smart object.png","Lock selected layer",true);for(auto *control:{lockTransparency,lockImage,lockPosition,lockArtboard,lockAll})lockRow->addWidget(control);lockRow->addStretch();layerDrawer=new QTreeWidget(bottomDock);layerDrawer->setObjectName("LayerDrawer");layerDrawer->setHeaderHidden(true);layerDrawer->setRootIsDecorated(true);layerDrawer->setAnimated(true);layerDrawer->setIndentation(18);layerDrawer->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);layerDrawer->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);layerDrawer->setToolTip("Artboards are shown first. Double-click an artboard to open its groups, then double-click a group to open its layers. Right-click any row for settings and properties.");bottomLayout->addWidget(layerDrawer,1);connect(layerDrawer,&QTreeWidget::itemDoubleClicked,this,[](QTreeWidgetItem *item,int){if(item&&item->childCount())item->setExpanded(!item->isExpanded());});connect(layerDrawer,&QTreeWidget::itemClicked,this,[this](QTreeWidgetItem *item,int){const int track=item?item->data(0,Qt::UserRole+1).toInt():-1;if(track>=0&&track<timelineTracks.size()&&trackList)trackList->setCurrentRow(track);});layerDrawer->setContextMenuPolicy(Qt::CustomContextMenu);connect(layerDrawer,&QWidget::customContextMenuRequested,this,[this](const QPoint &point){auto *item=layerDrawer->itemAt(point);if(!item)return;QMenu menu(this);auto *settings=menu.addAction("Layer settings");auto *properties=menu.addAction("Properties");auto *chosen=menu.exec(layerDrawer->viewport()->mapToGlobal(point));if(chosen==settings){const int track=item->data(0,Qt::UserRole+1).toInt();if(track>=0&&track<timelineTracks.size()&&trackList){trackList->setCurrentRow(track);status->setText("Layer settings selected · "+timelineTracks[track].name);}}else if(chosen==properties){QDialog dialog(this);dialog.setWindowTitle("Layer properties");auto *v=new QVBoxLayout(&dialog);v->addWidget(label(item->text(0)));v->addWidget(label(item->toolTip(0),"muted"));auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();}});connect(opacity,&QSlider::valueChanged,this,[this](int value){const int track=layerDrawer&&layerDrawer->currentItem()?layerDrawer->currentItem()->data(0,Qt::UserRole+1).toInt():-1;if(track>=0&&track<timelineTracks.size()){timelineTracks[track].opacity=value/100.;refresh();updateTrackPanel();}});connect(fill,&QSlider::valueChanged,this,[this](int value){const int track=layerDrawer&&layerDrawer->currentItem()?layerDrawer->currentItem()->data(0,Qt::UserRole+1).toInt():-1;if(track>=0&&track<timelineTracks.size()){timelineTracks[track].opacity=value/100.;refresh();updateTrackPanel();}});connect(lockAll,&QToolButton::toggled,this,[this](bool locked){const int track=layerDrawer&&layerDrawer->currentItem()?layerDrawer->currentItem()->data(0,Qt::UserRole+1).toInt():-1;if(track>=0&&track<timelineTracks.size())timelineTracks[track].locked=locked;});connect(screenMode,&QComboBox::currentTextChanged,this,[this](const QString &value){const int track=layerDrawer&&layerDrawer->currentItem()?layerDrawer->currentItem()->data(0,Qt::UserRole+1).toInt():-1;if(track>=0&&track<timelineTracks.size()){timelineTracks[track].blendMode=value;refresh();updateTrackPanel();}});layout->addWidget(bottomDock,0);updateLayerDrawer();
-    // The Layers card is an absolute bottom dock.  It reserves its own space
-    // so a long preview or an expanded settings card can never push it below
-    // the portrait window.
-    layout->removeWidget(bottomDock);
-    layout->setContentsMargins(16,12,16,412);
-    bottomDock->setProperty("absoluteDock",true);
-    // Visible Layers card: intentionally independent from the retired tree
-    // inspector, so importing media cannot hide it through that old layout.
-    auto *layerSurface=new QWidget(bottomDock);layerSurface->setObjectName("LayerCardSurface");layerSurface->setStyleSheet("QWidget#LayerCardSurface{background:transparent;} QComboBox{min-height:27px;background:transparent;} QToolButton#LayerCardSurfaceEntry{background:#101014;border:1px solid #32323a;border-radius:12px;color:#fff;padding:7px 12px;text-align:left;} QToolButton#LayerCardSurfaceEntry:checked{border-color:#7a4dff;background:#17131e;}");
-    auto *surfaceLayout=new QVBoxLayout(layerSurface);surfaceLayout->setContentsMargins(0,0,0,0);surfaceLayout->setSpacing(5);auto *surfaceHeading=label("LAYERS","section");surfaceHeading->setObjectName("LayerCardSurfaceHeading");surfaceLayout->addWidget(surfaceHeading);auto *surfaceControls=new QWidget(layerSurface);auto *surfaceGrid=new QGridLayout(surfaceControls);surfaceGrid->setContentsMargins(0,0,0,0);surfaceGrid->setHorizontalSpacing(10);surfaceGrid->setVerticalSpacing(3);auto *surfaceMode=new QComboBox(surfaceControls);surfaceMode->setObjectName("LayerCardSurfaceBlend");surfaceMode->addItems({"Normal","Multiply","Screen","Overlay","Lighten","Darken"});auto *surfaceOpacity=new GradientSlider(surfaceControls);surfaceOpacity->setObjectName("LayerCardSurfaceOpacity");surfaceOpacity->setRange(0,100);surfaceOpacity->setValue(100);auto *surfaceFill=new GradientSlider(surfaceControls);surfaceFill->setObjectName("LayerCardSurfaceFill");surfaceFill->setRange(0,100);surfaceFill->setValue(100);auto *surfaceOpacityCell=new QWidget(surfaceControls);auto *surfaceOpacityLayout=new QHBoxLayout(surfaceOpacityCell);surfaceOpacityLayout->setContentsMargins(0,0,0,0);surfaceOpacityLayout->addWidget(label("Opacity","muted"));surfaceOpacityLayout->addWidget(surfaceOpacity,1);auto *surfaceFillCell=new QWidget(surfaceControls);auto *surfaceFillLayout=new QHBoxLayout(surfaceFillCell);surfaceFillLayout->setContentsMargins(0,0,0,0);surfaceFillLayout->addWidget(label("Fill","muted"));surfaceFillLayout->addWidget(surfaceFill,1);surfaceGrid->addWidget(surfaceMode,0,0,1,2);surfaceGrid->addWidget(surfaceOpacityCell,1,0);surfaceGrid->addWidget(surfaceFillCell,1,1);surfaceGrid->setColumnStretch(0,1);surfaceGrid->setColumnStretch(1,1);surfaceLayout->addWidget(surfaceControls);auto *surfaceRail=new QScrollArea(layerSurface);surfaceRail->setObjectName("LayerCardSurfaceRail");surfaceRail->setFixedHeight(62);surfaceRail->setFrameShape(QFrame::NoFrame);surfaceRail->setWidgetResizable(false);surfaceRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);surfaceRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *surfaceHost=new QWidget(surfaceRail);surfaceHost->setObjectName("LayerCardSurfaceHost");auto *surfaceRailLayout=new QHBoxLayout(surfaceHost);surfaceRailLayout->setContentsMargins(0,0,0,0);surfaceRailLayout->setSpacing(8);surfaceRail->setWidget(surfaceHost);surfaceLayout->addWidget(surfaceRail);surfaceLayout->addStretch(1);connect(surfaceMode,&QComboBox::currentTextChanged,this,[this](const QString &value){if(!currentFile.isEmpty()){canvasLayers[currentFile].blendMode=value;refresh();}});connect(surfaceOpacity,&QSlider::valueChanged,this,[this](int value){if(!currentFile.isEmpty()){canvasLayers[currentFile].opacity=value/100.;refresh();}});connect(surfaceFill,&QSlider::valueChanged,this,[this](int value){if(!currentFile.isEmpty()){canvasLayers[currentFile].fill=value/100.;refresh();}});layerSurface->setGeometry(0,0,bottomDock->width(),bottomDock->height());layerSurface->show();layerSurface->raise();
-    // The retired dock used to paint a second lock row behind this card.
-    // Reuse those real lock controls once, inside the visible card, directly
-    // beneath Blend Mode.  This keeps their existing data connections while
-    // removing the overlap with the artboard rail.
-    for(int i=0;i<layerHeader->count();++i)if(auto *widget=layerHeader->itemAt(i)->widget())widget->hide();
-    auto *surfaceLocks=new QWidget(layerSurface);surfaceLocks->setObjectName("LayerCardLocks");auto *surfaceLocksLayout=new QHBoxLayout(surfaceLocks);surfaceLocksLayout->setContentsMargins(0,0,0,0);surfaceLocksLayout->setSpacing(7);surfaceLocksLayout->addWidget(label("Lock","muted"));
-    for(auto *control:{lockTransparency,lockImage,lockPosition,lockArtboard,lockAll}){lockRow->removeWidget(control);control->setParent(surfaceLocks);control->setFixedSize(28,28);control->setIconSize(QSize(17,17));control->setStyleSheet("QToolButton{background:#090909;border:1px solid transparent;border-radius:14px;} QToolButton:hover{border-color:#35c3f6;} QToolButton:checked{border:2px solid #eb4790;}");surfaceLocksLayout->addWidget(control);}surfaceLocksLayout->addStretch();
-    for(int i=0;i<lockRow->count();++i)if(auto *widget=lockRow->itemAt(i)->widget())widget->hide();
-    surfaceGrid->setRowMinimumHeight(0,27);surfaceGrid->setRowMinimumHeight(1,27);surfaceGrid->setRowStretch(0,1);surfaceGrid->setRowStretch(1,1);
-    // Two-column Layers card: blend mode at left; opacity and fill stack at right.
-    surfaceGrid->removeWidget(surfaceMode);surfaceGrid->removeWidget(surfaceOpacityCell);surfaceGrid->removeWidget(surfaceFillCell);surfaceGrid->addWidget(surfaceMode,0,0);surfaceGrid->addWidget(surfaceOpacityCell,0,1);surfaceGrid->addWidget(surfaceFillCell,1,1);surfaceGrid->setColumnStretch(0,2);surfaceGrid->setColumnStretch(1,3);
-    surfaceControls->setObjectName("LayerCardSurfaceControls");
-    auto *blendIcon=new QToolButton(surfaceControls);blendIcon->setObjectName("LayerCardBlendIcon");blendIcon->setIcon(whiteIcon(layerIconRoot+"editor_blend.png"));blendIcon->setIconSize(QSize(15,15));blendIcon->setFixedSize(25,25);blendIcon->setToolButtonStyle(Qt::ToolButtonIconOnly);blendIcon->setToolTip("Blend mode");blendIcon->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:12px;}");
-    surfaceOpacityCell->setObjectName("LayerCardOpacityCell");
-    surfaceFillCell->setObjectName("LayerCardFillCell");
-    // These captions/sliders are their own matched controls.  Keeping them
-    // out of the retired grid makes Fill impossible to clip beneath Opacity.
-    // Remove the live controls from the retired cells before reparenting.
-    // Otherwise that old grid can reclaim Fill during an import relayout and
-    // hide the entire second slider row.
-    surfaceOpacityLayout->removeWidget(surfaceOpacity);
-    surfaceFillLayout->removeWidget(surfaceFill);
-    surfaceOpacityCell->hide();
-    surfaceFillCell->hide();
-    surfaceOpacity->setParent(surfaceControls);
-    surfaceFill->setParent(surfaceControls);
-    surfaceOpacity->show();
-    surfaceFill->show();
-    auto *opacityCaption=label("Opacity","muted");opacityCaption->setParent(surfaceControls);opacityCaption->setObjectName("LayerCardOpacityCaption");opacityCaption->setAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-    auto *fillCaption=label("Fill","muted");fillCaption->setParent(surfaceControls);fillCaption->setObjectName("LayerCardFillCaption");fillCaption->setAlignment(Qt::AlignLeft|Qt::AlignVCenter);
-    // The Layer card is deliberately a two-column card, not a set of
-    // unrelated labels.  Center the blend choice and keep every button's
-    // visible label centered inside its own hit target.
-    surfaceMode->setEditable(false);
-    // The cards are placed by the dock, not by a second grid.  This preserves
-    // the two visible slider rows at every portrait-window size.
-    surfaceGrid->removeWidget(surfaceMode);
-    surfaceGrid->removeWidget(surfaceOpacityCell);
-    surfaceGrid->removeWidget(surfaceFillCell);
-    // The visible card is the only owner from this point forward.  Delete the
-    // retired grid and its empty cells rather than leaving hidden layouts that
-    // can compete with a live slider after an import.
-    delete surfaceGrid;
-    surfaceOpacityCell->deleteLater();
-    surfaceFillCell->deleteLater();
-    // The visible card uses fixed portrait geometry below.  These controls
-    // used to remain in this legacy VBox as well, so that layout could move
-    // the artboard rail off its pinned row as soon as imported media caused a
-    // relayout.  Detach them before their manual placement is established.
-    surfaceLayout->removeWidget(surfaceHeading);
-    surfaceLayout->removeWidget(surfaceControls);
-    surfaceLayout->removeWidget(surfaceRail);
-    // The old surface kept a stretch item after its children were detached.
-    // Remove that orphan before adding the single, visible card stack below;
-    // otherwise it consumes the dock height and pushes artboards off-screen.
-    while(surfaceLayout->count()) delete surfaceLayout->takeAt(0);
-    surfaceHeading->hide();
-    // The controls contain two 48px slider rows.  Never cap this parent at a
-    // one-row height: that physically clips the Fill handle and its track.
-    surfaceControls->setGeometry(0,32,bottomDock->width(),106);surfaceRail->setGeometry(0,148,bottomDock->width(),62);
-    auto *layersToggle=new QToolButton(layerSurface);layersToggle->setObjectName("LayerCardToggle");layersToggle->setText("LAYERS");layersToggle->setToolButtonStyle(Qt::ToolButtonTextOnly);layersToggle->setCursor(Qt::PointingHandCursor);layersToggle->setStyleSheet("QToolButton#LayerCardToggle{color:#fff;background:transparent;border:0;text-align:left;font-weight:700;padding:0;} QToolButton#LayerCardToggle:hover{color:#bda5ff;}");layersToggle->setGeometry(0,0,bottomDock->width(),30);
-    auto *panelRail=new QWidget(layerSurface);panelRail->setObjectName("LayerPanelRail");auto *panelLayout=new QHBoxLayout(panelRail);panelLayout->setContentsMargins(0,0,0,0);panelLayout->setSpacing(10);panelLayout->addStretch();const QString panelIconRoot="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";auto addPanel=[&](const QString &icon,const QString &tip){auto *panel=new QToolButton(panelRail);panel->setIcon(whiteIcon(panelIconRoot+icon));panel->setIconSize(QSize(19,19));panel->setFixedSize(38,38);panel->setToolTip(tip);panel->setStyleSheet("QToolButton{background:#09090c;border:1px solid transparent;border-radius:19px;} QToolButton:hover,QToolButton:checked{background:#15111c;border:2px solid #7a4dff;}");panelLayout->addWidget(panel);return panel;};auto *layersPanel=addPanel("shape layer.png","Layers");layersPanel->setChecked(true);layersPanel->setCheckable(true);auto *colorPanel=addPanel("icon_color_.png","Color");auto *characterPanel=addPanel("horizontal type tool.png","Character");auto *propertiesPanel=addPanel("panel settings.png","Properties");auto *adjustPanel=addPanel("editor_adjustments.png","Adjustments");panelLayout->addStretch();panelRail->setGeometry(0,96,bottomDock->width(),42);layersToggle->setGeometry(0,146,bottomDock->width(),30);
-    auto buildBottomRail=[&](const QString &objectName){auto *rail=new QScrollArea(layerSurface);rail->setObjectName(objectName);rail->setFixedHeight(objectName=="BottomToolbarRail"?42:50);rail->setFrameShape(QFrame::NoFrame);rail->setWidgetResizable(false);rail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);rail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);rail->setStyleSheet("QScrollArea{background:transparent;border:0;}");auto *host=new QWidget(rail);host->setObjectName(objectName+"Content");auto *railLayout=new QHBoxLayout(host);railLayout->setContentsMargins(0,0,0,0);railLayout->setSpacing(8);rail->setWidget(host);rail->viewport()->installEventFilter(this);host->installEventFilter(this);return qMakePair(rail,railLayout);};auto bottomTools=buildBottomRail("BottomToolbarRail");auto bottomModes=buildBottomRail("BottomModeRail");auto addBottomRailButton=[&](QHBoxLayout *railLayout,const QString &icon,const QString &tip){auto *control=new QToolButton(railLayout->parentWidget());control->setIcon(whiteIcon(panelIconRoot+icon));control->setIconSize(QSize(19,19));control->setFixedSize(38,38);control->setCheckable(true);control->setToolTip(tip);control->setStyleSheet("QToolButton{background:#09090c;border:1px solid transparent;border-radius:19px;} QToolButton:hover,QToolButton:checked{background:#15111c;border:2px solid #7a4dff;}");control->installEventFilter(this);railLayout->addWidget(control);return control;};const QList<QPair<CanvasTool,QPair<QString,QString>>> bottomToolDefs{{CanvasTool::Move,{"move tool.png","Move"}},{CanvasTool::ObjectSelect,{"object selection.png","Object Selection"}},{CanvasTool::RectangularMarquee,{"rectangle marquee tool.png","Rectangular Marquee"}},{CanvasTool::EllipticalMarquee,{"circle marquee tool.png","Elliptical Marquee"}},{CanvasTool::Lasso,{"lasso tool.png","Lasso"}},{CanvasTool::MagicWand,{"magic selection.png","Magic Wand"}},{CanvasTool::Crop,{"crop tool.png","Crop"}},{CanvasTool::SpotHeal,{"spot healing tool_.png","Spot Healing"}},{CanvasTool::HealingBrush,{"healing tool.png","Healing Brush"}},{CanvasTool::Patch,{"patch tool.png","Patch"}},{CanvasTool::CloneStamp,{"stamp tool.png","Clone Stamp · Alt-click samples"}},{CanvasTool::Brush,{"brush tool.png","Brush"}},{CanvasTool::Pencil,{"pencil tool.png","Pencil"}},{CanvasTool::Eraser,{"eraser tool.png","Eraser"}},{CanvasTool::Gradient,{"gradient tool.png","Gradient"}},{CanvasTool::Blur,{"blur tool.png","Blur"}},{CanvasTool::Sharpen,{"sharpen tool.png","Sharpen"}},{CanvasTool::Smudge,{"mixer brush tool.png","Smudge"}},{CanvasTool::Dodge,{"dodge tool.png","Dodge"}},{CanvasTool::Burn,{"burn tool.png","Burn"}},{CanvasTool::Sponge,{"sponge tool.png","Sponge"}},{CanvasTool::Pen,{"pen tool.png","Pen"}},{CanvasTool::Type,{"horizontal type tool.png","Type"}}};for(const auto &tool:bottomToolDefs){auto *control=addBottomRailButton(bottomTools.second,tool.second.first,tool.second.second);connect(control,&QToolButton::clicked,this,[this,tool,bottomTools,control]{for(auto *peer:bottomTools.first->findChildren<QToolButton*>())peer->setChecked(peer==control);if(tool.first==CanvasTool::Type){if(currentFile.isEmpty()||original.isNull()){showError("Import media before placing text.");return;}preview->setCanvasTool(CanvasTool::Type);status->setText("Type tool active · click the preview to place text");return;}preview->setCanvasTool(tool.first,maskBrushSize?maskBrushSize->value():48);status->setText(tool.second.second+" active");});}const QList<QPair<QString,QString>> bottomModeDefs{{"icon_canvas.png","Canvas"},{"editor_adjustments.png","Adjust"},{"quick selection.png","Select"},{"editor_trace.png","Trace"},{"editor_effects.png","Effects"},{"video.png","Video"},{"icon_textures.png","Texture"},{"icon_patterns.png","Pattern"},{"export.png","Export"}};for(const auto &mode:bottomModeDefs){addBottomRailButton(bottomModes.second,mode.first,mode.second);}
-    // The mode rail is the primary route into each real editor panel.  It is
-    // deliberately routed through the same CarouselTab click path as the
-    // upper rail, so it opens the live panel and cannot drift into a
-    // status-only placeholder action.
+    // One layout-owned bottom stack. The Layers panel has no UI until it is rebuilt.
+    bottomDock=new QWidget(shell);
+    bottomDock->setObjectName("BottomPinnedDock");
+    bottomDock->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Maximum);
+    auto *bottomLayout=new QVBoxLayout(bottomDock);
+    bottomLayout->setContentsMargins(0,0,0,0);
+    bottomLayout->setSpacing(1);
+    batchLabel=label("No media imported","muted");batchLabel->setParent(bottomDock);batchLabel->hide();
+    status=label("Ready · all adjustments are live","muted");status->setParent(bottomDock);status->hide();
+    thumbnail=new QLabel(bottomDock);thumbnail->hide();
+    info=label("No media","muted");info->setParent(bottomDock);info->hide();
+    const QString panelIconRoot="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";
+    auto buildBottomRail=[&](const QString &objectName){auto *rail=new QScrollArea(bottomDock);rail->setObjectName(objectName);rail->setFixedHeight(objectName=="BottomToolbarRail"?42:50);rail->setFrameShape(QFrame::NoFrame);rail->setWidgetResizable(false);rail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);rail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);rail->setStyleSheet("QScrollArea{background:transparent;border:0;}");auto *host=new QWidget(rail);host->setObjectName(objectName+"Content");auto *railLayout=new QHBoxLayout(host);railLayout->setContentsMargins(0,0,0,0);railLayout->setSpacing(8);rail->setWidget(host);rail->viewport()->installEventFilter(this);host->installEventFilter(this);return qMakePair(rail,railLayout);};auto bottomTools=buildBottomRail("BottomToolbarRail");auto bottomModes=buildBottomRail("BottomModeRail");auto addBottomRailButton=[&](QHBoxLayout *railLayout,const QString &icon,const QString &tip){auto *control=new FluidToolButton(railLayout->parentWidget());control->setIcon(whiteIcon(panelIconRoot+icon));control->setIconSize(QSize(19,19));control->setFixedSize(38,38);control->setCheckable(true);control->setToolTip(tip);control->installEventFilter(this);railLayout->addWidget(control);return control;};const QList<QPair<CanvasTool,QPair<QString,QString>>> bottomToolDefs{{CanvasTool::Move,{"move tool.png","Move"}},{CanvasTool::ObjectSelect,{"object selection.png","Object Selection"}},{CanvasTool::RectangularMarquee,{"rectangle marquee tool.png","Rectangular Marquee"}},{CanvasTool::EllipticalMarquee,{"circle marquee tool.png","Elliptical Marquee"}},{CanvasTool::Lasso,{"lasso tool.png","Lasso"}},{CanvasTool::MagicWand,{"magic selection.png","Magic Wand"}},{CanvasTool::Crop,{"crop tool.png","Crop"}},{CanvasTool::SpotHeal,{"spot healing tool_.png","Spot Healing"}},{CanvasTool::HealingBrush,{"healing tool.png","Healing Brush"}},{CanvasTool::Patch,{"patch tool.png","Patch"}},{CanvasTool::CloneStamp,{"stamp tool.png","Clone Stamp · Alt-click samples"}},{CanvasTool::Brush,{"brush tool.png","Brush"}},{CanvasTool::Pencil,{"pencil tool.png","Pencil"}},{CanvasTool::Eraser,{"eraser tool.png","Eraser"}},{CanvasTool::Gradient,{"gradient tool.png","Gradient"}},{CanvasTool::Blur,{"blur tool.png","Blur"}},{CanvasTool::Sharpen,{"sharpen tool.png","Sharpen"}},{CanvasTool::Smudge,{"mixer brush tool.png","Smudge"}},{CanvasTool::Dodge,{"dodge tool.png","Dodge"}},{CanvasTool::Burn,{"burn tool.png","Burn"}},{CanvasTool::Sponge,{"sponge tool.png","Sponge"}},{CanvasTool::Pen,{"pen tool.png","Pen"}},{CanvasTool::Type,{"horizontal type tool.png","Type"}}};for(const auto &tool:bottomToolDefs){auto *control=addBottomRailButton(bottomTools.second,tool.second.first,tool.second.second);connect(control,&QToolButton::clicked,this,[this,tool,bottomTools,control]{for(auto *peer:bottomTools.first->findChildren<QToolButton*>())peer->setChecked(peer==control);if(tool.first==CanvasTool::Type){if(currentFile.isEmpty()||original.isNull()){showError("Import media before placing text.");return;}preview->setCanvasTool(CanvasTool::Type);status->setText("Type tool active · click the preview to place text");return;}preview->setCanvasTool(tool.first,maskBrushSize?maskBrushSize->value():48);status->setText(tool.second.second+" active");});}const QList<QPair<QString,QString>> bottomModeDefs{{"icon_canvas.png","Canvas"},{"editor_adjustments.png","Adjust"},{"quick selection.png","Select"},{"editor_trace.png","Trace"},{"editor_effects.png","Effects"},{"video.png","Video"},{"icon_textures.png","Texture"},{"icon_patterns.png","Pattern"},{"export.png","Export"}};for(const auto &mode:bottomModeDefs){addBottomRailButton(bottomModes.second,mode.first,mode.second);}
     for(auto *modeButton:bottomModes.first->findChildren<QToolButton*>()){
         const QString modeName=modeButton->toolTip();
-        QObject::disconnect(modeButton,nullptr,this,nullptr);
         connect(modeButton,&QToolButton::clicked,this,[this,modeName,bottomModes]{
             for(auto *peer:bottomModes.first->findChildren<QToolButton*>())peer->setChecked(peer->toolTip()==modeName);
-            for(auto *carouselButton:tabCarousel->findChildren<QToolButton*>("CarouselTab")){
+            for(auto *carouselButton:tabCarousel->findChildren<QToolButton*>("CarouselTab"))
                 if(carouselButton->toolTip()==modeName+" settings"){carouselButton->click();return;}
-            }
             status->setText(modeName+" panel is unavailable");
         });
     }
-    bottomTools.second->addStretch();bottomModes.second->addStretch();
-    bottomTools.first->widget()->setMinimumWidth(bottomTools.second->sizeHint().width());bottomTools.first->widget()->adjustSize();
-    bottomModes.first->widget()->setMinimumWidth(bottomModes.second->sizeHint().width());bottomModes.first->widget()->adjustSize();
-    auto centerScrollableRail=[](QScrollArea *rail){if(!rail||!rail->widget())return;QWidget *content=rail->widget();content->setMinimumWidth(qMax(content->sizeHint().width(),rail->viewport()->width()));content->adjustSize();};
-    QTimer::singleShot(0,layerSurface,[centerScrollableRail,bottomTools,bottomModes]{centerScrollableRail(bottomTools.first);centerScrollableRail(bottomModes.first);});
-    bottomTools.first->setFixedHeight(36); bottomModes.first->setFixedHeight(46); panelRail->setFixedHeight(32); layersToggle->setFixedHeight(20); surfaceControls->setFixedHeight(106); surfaceRail->setFixedHeight(62);
-    // The artboard bar is created with the card, rather than after an import.
-    // It is therefore always visible on a blank canvas and remains present
-    // when a decoder updates the active image.
-    auto *directArtboardBar=new QWidget(layerSurface);directArtboardBar->setObjectName("LayerCardDirectArtboardBar");directArtboardBar->setFixedHeight(62);auto *directArtboardLayout=new QHBoxLayout(directArtboardBar);directArtboardLayout->setContentsMargins(30,0,0,0);directArtboardLayout->setSpacing(8);auto *defaultBoard=new LayerRowButton("Artboard 1",{},directArtboardBar);defaultBoard->setObjectName("LayerCardSurfaceEntry");defaultBoard->setToolButtonStyle(Qt::ToolButtonTextOnly);defaultBoard->setCheckable(true);defaultBoard->setChecked(true);defaultBoard->setFixedHeight(52);directArtboardLayout->addWidget(defaultBoard,1);auto *defaultNewBoard=new QToolButton(directArtboardBar);defaultNewBoard->setText("+ New Artboard");defaultNewBoard->setToolButtonStyle(Qt::ToolButtonTextOnly);defaultNewBoard->setFixedHeight(52);directArtboardLayout->addWidget(defaultNewBoard,1);connect(defaultBoard,&QToolButton::clicked,this,[this]{if(!currentFile.isEmpty())selectFile(currentFile);});connect(defaultNewBoard,&QToolButton::clicked,this,[this]{createNewProject(widthInput?widthInput->value():1024,heightInput?heightInput->value():1024,72,true,"RGB","sRGB IEC61966-2.1",Qt::transparent);});
-    // These controls are all explicitly pinned in the portrait dock.  Do not
-    // add them back to surfaceLayout: a second owner moves them after media
-    // loads and is what caused the clipped text and overlapping controls.
-    auto setLayersExpanded=[this,shell,layout,layerSurface,surfaceControls,surfaceRail]{const bool expanded=!layerSurface->property("layerExpanded").toBool();layerSurface->setProperty("layerExpanded",expanded);const int dockHeight=qMax(190,qRound(shell->height()*(expanded?.65:.35)));bottomDock->setFixedHeight(dockHeight);layout->setContentsMargins(16,12,16,dockHeight+12);bottomDock->setGeometry(16,qMax(0,shell->height()-dockHeight),qMax(1,shell->width()-32),dockHeight);layerSurface->setGeometry(0,0,bottomDock->width(),bottomDock->height());surfaceControls->setVisible(expanded);surfaceRail->setVisible(expanded);bottomDock->raise();layerSurface->raise();};layerSurface->setProperty("layerExpanded",false);const int initialDockHeight=qMax(190,qRound(shell->height()*.35));bottomDock->setFixedHeight(initialDockHeight);layout->setContentsMargins(16,12,16,initialDockHeight+12);surfaceControls->hide();surfaceRail->hide();connect(layersToggle,&QToolButton::clicked,this,setLayersExpanded);connect(layersPanel,&QToolButton::clicked,this,[layerSurface,layersToggle]{if(!layerSurface->property("layerExpanded").toBool())layersToggle->click();});connect(colorPanel,&QToolButton::clicked,this,[this]{tabs->setCurrentIndex(1);tabs->show();});connect(characterPanel,&QToolButton::clicked,this,[this]{tabs->setCurrentIndex(3);tabs->show();});connect(propertiesPanel,&QToolButton::clicked,this,[this]{tabs->setCurrentIndex(0);tabs->show();});connect(adjustPanel,&QToolButton::clicked,this,[this]{tabs->setCurrentIndex(1);tabs->show();});
-    // Center the toolbar and mode rails with the same symmetric spacing as
-    // the panel rail; neither rail is allowed to cluster at the left edge.
-    bottomTools.second->insertStretch(0);bottomModes.second->insertStretch(0);
-    // Layers are the default visible card, not a hidden inspector title.
-    layerSurface->setProperty("layerExpanded",false);surfaceControls->hide();surfaceRail->hide();
-    // Foreground artboard rail: this intentionally belongs to the pinned dock
-    // (not a content layout) so it can never be clipped by a relayout while an
-    // image decoder completes.
-    auto *alwaysArtboardBar=new QWidget(shell);alwaysArtboardBar->setObjectName("LayerCardAlwaysArtboardBar");alwaysArtboardBar->setFixedHeight(78);auto *alwaysArtboardLayout=new QHBoxLayout(alwaysArtboardBar);alwaysArtboardLayout->setContentsMargins(30,0,0,0);alwaysArtboardLayout->setSpacing(8);auto *alwaysBoard=new LayerRowButton("Artboard 1",{},alwaysArtboardBar);alwaysBoard->setObjectName("LayerCardSurfaceEntry");alwaysBoard->setToolButtonStyle(Qt::ToolButtonTextOnly);alwaysBoard->setCheckable(true);alwaysBoard->setChecked(true);alwaysBoard->setFixedHeight(70);alwaysArtboardLayout->addWidget(alwaysBoard);auto *alwaysNewBoard=new QToolButton(alwaysArtboardBar);alwaysNewBoard->setObjectName("LayerCardAlwaysNewArtboard");alwaysNewBoard->setText("+ New Artboard");alwaysNewBoard->setToolButtonStyle(Qt::ToolButtonTextOnly);alwaysNewBoard->setFixedHeight(70);alwaysArtboardLayout->addWidget(alwaysNewBoard);connect(alwaysBoard,&QToolButton::clicked,this,[this]{if(!currentFile.isEmpty())selectFile(currentFile);});connect(alwaysNewBoard,&QToolButton::clicked,this,[this]{const QSize size=original.isNull()?QSize(widthInput?widthInput->value():1024,heightInput?heightInput->value():1024):original.size();QDir directory(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));directory.mkpath("artboards");const QString path=directory.filePath("artboards/artboard_"+QDateTime::currentDateTimeUtc().toString("yyyyMMddhhmmsszzz")+".png");QImage blank(size,QImage::Format_ARGB32);blank.fill(Qt::transparent);if(!blank.save(path,"PNG")){showError("Could not create the new artboard.");return;}const QString name="Artboard "+QString::number(this->batch.files.size()+1);this->batch.add({path});inputTitles[path]=name;CanvasLayer layer;layer.source=path;layer.name=name;layer.nativeSize=size;canvasLayers[path]=layer;updateBatchLabel();selectFile(path);autosaveProject();status->setText(name+" added to this project");});
-    const QIcon artboardVisibleIcon=whiteIcon(panelIconRoot+"layer_show.png");
-    const QIcon artboardHiddenIcon=whiteIcon(panelIconRoot+"layer_hidden.png");
-    auto *artboardEye=new QToolButton(alwaysArtboardBar);artboardEye->setIcon(artboardVisibleIcon);artboardEye->setIconSize(QSize(21,21));artboardEye->setToolButtonStyle(Qt::ToolButtonIconOnly);artboardEye->setCheckable(true);artboardEye->setChecked(true);artboardEye->setFixedSize(36,36);artboardEye->setToolTip("Show or hide selected artboard");artboardEye->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:18px;} QToolButton:hover{background:#131318;}");alwaysArtboardLayout->insertWidget(0,artboardEye);connect(artboardEye,&QToolButton::toggled,this,[this,artboardEye,artboardVisibleIcon,artboardHiddenIcon](bool visible){artboardEye->setIcon(visible?artboardVisibleIcon:artboardHiddenIcon);if(canvasLayers.contains(currentFile)){canvasLayers[currentFile].visible=visible;refresh();status->setText(visible?"Artboard visible":"Artboard hidden");}});
-    auto *activeArtboardEntry=new QWidget(alwaysArtboardBar);activeArtboardEntry->setObjectName("ActiveArtboardEntry");activeArtboardEntry->setFixedHeight(85);activeArtboardEntry->setStyleSheet("QWidget#ActiveArtboardEntry{background:#090909;border:2px solid #eb4790;border-radius:22px;} QToolButton{background:transparent;border:0;color:#fff;text-align:center;}");auto *activeArtboardEntryLayout=new QHBoxLayout(activeArtboardEntry);activeArtboardEntryLayout->setContentsMargins(9,6,9,6);activeArtboardEntryLayout->setSpacing(8);alwaysArtboardLayout->removeWidget(artboardEye);alwaysArtboardLayout->removeWidget(alwaysBoard);alwaysArtboardLayout->insertWidget(0,activeArtboardEntry);auto *artboardThumbnail=new QLabel(activeArtboardEntry);artboardThumbnail->setObjectName("ActiveArtboardThumbnail");artboardThumbnail->setFixedSize(54,54);artboardThumbnail->setAlignment(Qt::AlignCenter);artboardThumbnail->setStyleSheet("QLabel{background:#090909;border:0;border-radius:8px;}");auto *artboardEffects=new QToolButton(activeArtboardEntry);artboardEffects->setObjectName("LayerCardArtboardEffects");artboardEffects->setIcon(whiteIcon(panelIconRoot+"editor_effects.png"));artboardEffects->setIconSize(QSize(18,18));artboardEffects->setFixedSize(30,30);artboardEffects->setToolButtonStyle(Qt::ToolButtonIconOnly);artboardEffects->setToolTip("Artboard effects");artboardEffects->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:15px;} QToolButton:hover{background:#131318;}");connect(artboardEffects,&QToolButton::clicked,this,[this]{tabs->setCurrentIndex(4);tabs->show();});auto *artboardRightSlot=new QWidget(activeArtboardEntry);artboardRightSlot->setFixedWidth(92);auto *rightSlotLayout=new QHBoxLayout(artboardRightSlot);rightSlotLayout->setContentsMargins(0,0,0,0);rightSlotLayout->setSpacing(0);rightSlotLayout->addWidget(artboardEffects);rightSlotLayout->addStretch();activeArtboardEntryLayout->addWidget(artboardEye);activeArtboardEntryLayout->addWidget(artboardThumbnail);activeArtboardEntryLayout->addWidget(alwaysBoard,1);activeArtboardEntryLayout->addWidget(artboardRightSlot);
-    activeArtboardEntry->setFixedWidth(330);alwaysNewBoard->setFixedWidth(174);alwaysNewBoard->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:18px;color:#fff;font-weight:700;padding:0 12px;} QToolButton:hover{background:#131318;}");
-    alwaysArtboardBar->setFixedHeight(81);alwaysBoard->setFixedHeight(73);alwaysNewBoard->setFixedHeight(73);activeArtboardEntry->setFixedHeight(73);artboardEye->setFixedSize(30,30);artboardEye->setIconSize(QSize(18,18));
-    alwaysBoard->setToolButtonStyle(Qt::ToolButtonTextOnly);alwaysBoard->setStyleSheet("QToolButton{background:transparent;border:0;color:#fff;text-align:center;padding:0;font-weight:600;}");
-    alwaysNewBoard->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:18px;color:#fff;text-align:center;padding:0;font-weight:700;} QToolButton:hover{background:#131318;}");
-    auto *artboardActions=new QWidget(shell);artboardActions->setObjectName("LayerCardArtboardActions");artboardActions->setFixedHeight(42);auto *artboardActionsLayout=new QHBoxLayout(artboardActions);artboardActionsLayout->setContentsMargins(30,0,30,0);artboardActionsLayout->setSpacing(10);auto addArtboardAction=[this,artboardActions,artboardActionsLayout,&panelIconRoot](const QString &icon,const QString &tip,std::function<void()> action){auto *control=new QToolButton(artboardActions);control->setIcon(whiteIcon(panelIconRoot+icon));control->setIconSize(QSize(19,19));control->setFixedSize(32,32);control->setToolButtonStyle(Qt::ToolButtonIconOnly);control->setToolTip(tip);control->setStyleSheet("QToolButton{background:#090909;border:1px solid transparent;border-radius:16px;} QToolButton:hover{border-color:#35c3f6;background:#131318;} QToolButton:pressed{border-color:#eb4790;}");artboardActionsLayout->addWidget(control);connect(control,&QToolButton::clicked,this,action);};artboardActionsLayout->addStretch();addArtboardAction("smart object.png","Linked artboards",[this]{status->setText("Linked-artboard controls selected");});addArtboardAction("add effects.png","Add layer style / effects",[this]{tabs->setCurrentIndex(4);tabs->show();status->setText("Layer styles selected");});addArtboardAction("horizontial mask type tool.png","Add layer mask",[this]{if(!currentFile.isEmpty()){preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);status->setText("Layer mask brush active");}});addArtboardAction("editor_adjustments.png","Add adjustment layer",[this]{tabs->setCurrentIndex(1);tabs->show();status->setText("Adjustment controls selected");});addArtboardAction("shape layer.png","New group in selected artboard",[this]{TimelineTrack group;group.type=TimelineTrack::Effect;group.name="Group";group.start=0;group.end=qMax(5.,media.duration);timelineTracks<<group;updateTrackPanel();status->setText("Group created in selected artboard");});addArtboardAction("add layer.png","New layer in selected artboard",[this]{if(currentFile.isEmpty()||original.isNull())return;TimelineTrack layer;layer.type=TimelineTrack::Image;layer.name="Layer";layer.image=QImage(original.size(),QImage::Format_ARGB32);layer.image.fill(Qt::transparent);layer.start=0;layer.end=qMax(5.,media.duration);timelineTracks<<layer;updateTrackPanel();status->setText("Layer created in selected artboard");});addArtboardAction("delete anchor point tool.png","Delete selected artboard without deleting its source file",[this]{if(currentFile.isEmpty())return;const QString removed=currentFile;this->batch.files.removeAll(removed);canvasLayers.remove(removed);timelineTracks.clear();if(!this->batch.files.isEmpty()){selectFile(this->batch.files.first());}else{createNewProject(widthInput?widthInput->value():1024,heightInput?heightInput->value():1024,72,true,"RGB","sRGB IEC61966-2.1",Qt::transparent);}status->setText("Artboard removed from this Aspectra project");});
-    auto *artboardViewport=new QScrollArea(shell);artboardViewport->setObjectName("ArtboardRail");artboardViewport->setFrameShape(QFrame::NoFrame);artboardViewport->setWidgetResizable(false);artboardViewport->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);artboardViewport->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);artboardViewport->setWidget(alwaysArtboardBar);artboardViewport->viewport()->installEventFilter(this);alwaysArtboardBar->installEventFilter(this);activeArtboardEntry->installEventFilter(this);alwaysBoard->installEventFilter(this);alwaysNewBoard->installEventFilter(this);artboardEye->installEventFilter(this);
-    artboardViewport->setFixedHeight(81);artboardActions->setFixedHeight(34);artboardActionsLayout->setSpacing(7);for(auto *button:artboardActions->findChildren<QToolButton*>()){button->setFixedSize(21,21);button->setIconSize(QSize(14,14));button->setStyleSheet("QToolButton{background:#090909;border:1px solid transparent;border-radius:11px;} QToolButton:hover{border-color:#35c3f6;} QToolButton:pressed{border-color:#eb4790;}");}
-    alwaysBoard->setContextMenuPolicy(Qt::CustomContextMenu);connect(alwaysBoard,&QWidget::customContextMenuRequested,this,[alwaysBoard,artboardActions](const QPoint &point){QMenu menu(alwaysBoard);const QList<QPair<QString,QString>> entries{{"Linked artboards","Linked artboards"},{"Layer style / effects","Add layer style / effects"},{"Add layer mask","Add layer mask"},{"Add adjustment layer","Add adjustment layer"},{"New group","New group in selected artboard"},{"New layer","New layer in selected artboard"},{"Delete artboard","Delete selected artboard without deleting its source file"}};QHash<QAction*,QString> actions;for(const auto &entry:entries)actions.insert(menu.addAction(entry.first),entry.second);if(auto *chosen=menu.exec(alwaysBoard->mapToGlobal(point))){for(auto *button:artboardActions->findChildren<QToolButton*>())if(button->toolTip()==actions.value(chosen)){button->click();break;}}});
-    auto pinLayersDock=[shell,this]{if(!bottomDock)return;const int side=16;bottomDock->setGeometry(side,qMax(0,shell->height()-bottomDock->height()),qMax(1,shell->width()-side*2),bottomDock->height());bottomDock->show();bottomDock->raise();};
-    QTimer::singleShot(0,this,[pinLayersDock,shell,alwaysArtboardBar,artboardViewport,artboardActions]{pinLayersDock();artboardViewport->setGeometry(16,qMax(0,shell->height()-127),qMax(1,shell->width()-32),81);alwaysArtboardBar->setMinimumWidth(qMax(520,artboardViewport->viewport()->width()));alwaysArtboardBar->adjustSize();artboardActions->setGeometry(16,qMax(0,shell->height()-40),qMax(1,shell->width()-32),34);artboardViewport->show();artboardActions->show();artboardViewport->raise();artboardActions->raise();});
-    QTimer::singleShot(0,this,[shell,alwaysArtboardBar,artboardViewport,artboardActions]{artboardViewport->setGeometry(16,qMax(0,shell->height()-127),qMax(1,shell->width()-32),81);alwaysArtboardBar->setMinimumWidth(qMax(542,artboardViewport->viewport()->width()));artboardActions->setGeometry(16,qMax(0,shell->height()-40),qMax(1,shell->width()-32),34);});
-    // The dock receives its final portrait width only after the first layout
-    // pass. Reposition the three rails then; otherwise a blank canvas starts
-    // with rails laid out at width zero and their icons appear clipped.
-    QTimer::singleShot(0,this,[this]{ updateLayerDrawer(); });
-    // The original inspector remains the command backend, but it is not a
-    // second visible drawer.  The three rails and card above are the only
-    // bottom UI; hiding the host lets the preview occupy all remaining space.
-    QTimer::singleShot(0,this,[this]{
-        if(auto *legacyTools=findChild<QScrollArea*>("MainToolRail")) legacyTools->hide();
-        if(tabCarousel){
-            tabCarousel->hide();
-            if(auto *host=tabCarousel->parentWidget()) host->hide();
-        }
-        if(auto *sub=findChild<QScrollArea*>("SubSettingsRail")) sub->hide();
-        if(auto *card=findChild<QWidget*>("ActiveSettingCard")) card->hide();
-    });
-    // The card is independently positioned in this dock.  Keep the retired
-    // inspector objects alive (their signals are still shared) but never let
-    // them paint or participate in the visible Layers card.
-    if(auto *navigator=bottomDock->findChild<QWidget*>("LayerCardNavigator")){
-        bottomLayout->removeWidget(navigator);
-        for(auto *oldRow:{layerHeader,lockRow})
-            for(int i=0;i<oldRow->count();++i)
-                if(auto *widget=oldRow->itemAt(i)->widget()) widget->hide();
-        layerDrawer->hide();
-        if(artboardRail) artboardRail->hide();
-        navigator->setParent(bottomDock);
-        navigator->setGeometry(0,0,bottomDock->width(),bottomDock->height());
-        // The visible level-zero card is deliberately absolute rather than a
-        // nested splitter: heading, blend controls and the artboard rail
-        // always remain inside the bottom card after import.
-        QTimer::singleShot(0,this,[this,navigator]{
-            if(!bottomDock)return;
-            auto *heading=navigator->findChild<QLabel*>("LayerCardHeading");
-            auto *controls=navigator->findChild<QWidget*>("LayerCardControls");
-            auto *rail=navigator->findChild<QScrollArea*>("LayerCardArtboardRail");
-            if(heading){heading->setParent(bottomDock);heading->show();}
-            if(controls){controls->setParent(bottomDock);controls->show();}
-            if(rail){rail->setParent(bottomDock);rail->show();}
-            navigator->hide();
-            const int width=bottomDock->width();
-            if(heading)heading->setGeometry(0,0,width,28);
-            if(controls)controls->setGeometry(0,32,width,106);
-            if(rail)rail->setGeometry(0,148,width,58);
-            if(rail)rail->raise();
-            if(controls)controls->raise();
-            if(heading)heading->raise();
+    auto *panelRail=new QWidget(bottomDock);
+    panelRail->setObjectName("BottomPanelRail");
+    auto *panelLayout=new QHBoxLayout(panelRail);
+    panelLayout->setContentsMargins(0,0,0,0);
+    panelLayout->setSpacing(10);
+    panelLayout->addStretch();
+    for(const auto &entry:QList<QPair<QString,QString>>{{"shape layer.png","Layers"},{"icon_color_.png","Color"},{"horizontal type tool.png","Character"},{"panel settings.png","Properties"},{"editor_adjustments.png","Adjustments"}}){
+        auto *panel=new FluidToolButton(panelRail);
+        panel->setIcon(whiteIcon(panelIconRoot+entry.first));
+        panel->setIconSize(QSize(19,19));
+        panel->setFixedSize(38,38);
+        panel->setToolTip(entry.second);
+        panelLayout->addWidget(panel);
+        if(entry.second!="Layers")connect(panel,&QToolButton::clicked,this,[this,name=entry.second]{
+            const QString target=name=="Color"||name=="Adjustments"?"Adjust":name=="Character"?"Canvas":"Canvas";
+            for(auto *tab:tabCarousel->findChildren<QToolButton*>("CarouselTab"))
+                if(tab->toolTip()==target+" settings"){tab->click();break;}
         });
     }
+    panelLayout->addStretch();
+    bottomTools.first->setFixedHeight(BottomRailMetrics::toolbarHeight);
+    bottomModes.first->setFixedHeight(BottomRailMetrics::modesHeight);
+    for(auto *rail:{bottomTools.first,bottomModes.first}){
+        rail->widget()->adjustSize();
+        bottomLayout->addWidget(rail);
+    }
+    panelRail->setFixedHeight(BottomRailMetrics::panelsHeight);
+    bottomLayout->addWidget(panelRail);
+    bottomDock->setFixedHeight(BottomRailMetrics::toolbarHeight+BottomRailMetrics::modesHeight+BottomRailMetrics::panelsHeight+2*BottomRailMetrics::gap);
+    layout->addWidget(bottomDock,0);
+    layout->setContentsMargins(16,12,16,12);
+    layout->setStretch(layout->indexOf(stageHost),1);
+    preview->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
+    stageHost->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
+    if(auto *legacy=findChild<QScrollArea*>("MainToolRail"))legacy->hide();
+    tabCarousel->hide();
+    if(auto *sub=findChild<QScrollArea*>("SubSettingsRail"))sub->hide();
 }
 QWidget *MainWindow::framePanel(){
     auto *page=new QWidget;auto *v=new QVBoxLayout(page);v->setContentsMargins(12,12,12,12);v->setSpacing(8);auto *r=row(v);r->addWidget(label("ASPECT & DIMENSIONS","section"));r->addStretch();lock=new QCheckBox("Lock ratio");lock->setChecked(true);r->addWidget(lock);ratio=new QComboBox;ratio->addItems({"Source","1:1","16:9","9:16","4:3","Custom…"});ratio->setCurrentIndex(1);r->addWidget(ratio);connect(ratio,&QComboBox::currentIndexChanged,this,&MainWindow::aspectChanged);connect(lock,&QCheckBox::toggled,this,[this](bool on){if(on)lockedRatio=double(widthInput->value())/heightInput->value();});
@@ -1160,584 +1084,7 @@ void MainWindow::selectFile(const QString &path){
 }
 void MainWindow::navigate(int delta){if(batch.files.isEmpty()||loading)return;int index=batch.files.indexOf(currentFile);index=(index+delta+batch.files.size())%batch.files.size();selectFile(batch.files[index]);}
 void MainWindow::updateLayerDrawer(){
-    // One visible bottom hierarchy only.  The old tree/inspector is retained
-    // as data plumbing but is deliberately not allowed to lay itself out.
-    if(bottomDock){
-        if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){
-            const bool expanded=surface->property("layerExpanded").toBool();
-            auto *shell=bottomDock->parentWidget();
-            const int dockHeight=shell?qMax(190,qRound(shell->height()*(expanded?.65:.35))):(expanded?500:190);
-            bottomDock->setFixedHeight(dockHeight);
-            if(shell){
-                bottomDock->setGeometry(16,qMax(0,shell->height()-dockHeight),qMax(1,shell->width()-32),dockHeight);
-                if(auto *outer=qobject_cast<QVBoxLayout*>(shell->layout())) outer->setContentsMargins(16,12,16,dockHeight+12);
-            }
-            surface->setGeometry(0,0,bottomDock->width(),bottomDock->height());
-            surface->show(); surface->raise(); bottomDock->show(); bottomDock->raise();
-            if(layerDrawer) layerDrawer->hide();
-            if(auto *legacy=bottomDock->findChild<QWidget*>("LayerCardNavigator")) legacy->hide();
-            if(auto *legacyTools=findChild<QScrollArea*>("MainToolRail")) legacyTools->hide();
-            if(tabCarousel){ tabCarousel->hide(); if(auto *host=tabCarousel->parentWidget()) host->hide(); }
-            if(tabs) tabs->hide();
-            const int width=surface->width();
-            // The three rails are absolute children of the portrait dock.
-            // Row metrics are intentionally padded to protect icon and label bounds.
-            // Their content widths are explicit as well, so a removed card
-            // layout can never collapse, crop, or bunch their buttons.
-            if(auto *tools=surface->findChild<QScrollArea*>("BottomToolbarRail")){
-                tools->setGeometry(0,0,width,44); tools->show();
-                if(auto *host=tools->widget()){const int content=23*30+22*8;host->setFixedWidth(qMax(width,content));host->setMinimumHeight(44);if(auto *layout=qobject_cast<QHBoxLayout*>(host->layout()))layout->setContentsMargins(qMax(0,(width-content)/2),6,0,6);}
-            }
-            if(auto *modeRail=surface->findChild<QScrollArea*>("BottomModeRail")){
-                modeRail->setGeometry(0,48,width,52); modeRail->show();
-                if(auto *host=modeRail->widget()){const int content=9*42+8*8;host->setFixedWidth(qMax(width,content));host->setMinimumHeight(52);if(auto *layout=qobject_cast<QHBoxLayout*>(host->layout()))layout->setContentsMargins(qMax(0,(width-content)/2),5,0,5);}
-            }
-            if(auto *panelRail=surface->findChild<QWidget*>("LayerPanelRail")){panelRail->setGeometry(0,106,width,42);if(auto *layout=qobject_cast<QHBoxLayout*>(panelRail->layout()))layout->setContentsMargins(0,6,0,6);panelRail->show();}
-            surface->setStyleSheet("QWidget#LayerCardSurface{background:transparent;border:0;}");
-            if(auto *tools=surface->findChild<QWidget*>("BottomToolbarRail")){for(auto *button:tools->findChildren<QToolButton*>()){button->setFixedSize(30,30);button->setIconSize(QSize(16,16));button->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:15px;} QToolButton:hover{border:2px solid #35c3f6;} QToolButton:checked{border:2px solid #eb4790;}");}}
-            if(auto *modes=surface->findChild<QWidget*>("BottomModeRail")){for(auto *button:modes->findChildren<QToolButton*>()){button->setFixedSize(42,42);button->setIconSize(QSize(22,22));button->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:21px;} QToolButton:hover{border:2px solid #35c3f6;} QToolButton:checked{border:2px solid #eb4790;}");}}
-            if(auto *panels=surface->findChild<QWidget*>("LayerPanelRail")){for(auto *button:panels->findChildren<QToolButton*>()){button->setFixedSize(30,30);button->setIconSize(QSize(16,16));button->setStyleSheet("QToolButton{background:#090909;border:0;border-radius:15px;} QToolButton:hover{border:2px solid #35c3f6;} QToolButton:checked{border:2px solid #eb4790;}");}}
-            if(auto *title=surface->findChild<QToolButton*>("LayerCardToggle")){
-                title->setGeometry(0,154,width,26);
-                title->setText("LAYERS");
-                title->show();
-            }
-            if(auto *controls=surface->findChild<QWidget*>("LayerCardSurfaceControls")){controls->setGeometry(0,180,width,106);controls->setVisible(expanded);controls->raise();if(auto *icon=controls->findChild<QToolButton*>("LayerCardBlendIcon"))icon->setGeometry(0,2,30,30);if(auto *mode=controls->findChild<QComboBox*>("LayerCardSurfaceBlend")){mode->setGeometry(36,2,qMax(0,qMin(260,width)-36),30);mode->setFixedHeight(30);mode->setStyleSheet("QComboBox{font-size:10px;background:#090909;border:0;border-radius:15px;color:#fff;padding:0 10px;} QComboBox::drop-down{border:0;width:22px;}");}const int rightX=qMin(280,width);const int captionWidth=qMin(52,qMax(0,width-rightX));const int sliderX=rightX+captionWidth+6;const int sliderWidth=qMax(0,width-sliderX);if(auto *caption=controls->findChild<QLabel*>("LayerCardOpacityCaption")){caption->setGeometry(rightX,0,captionWidth,48);caption->show();caption->raise();}if(auto *slider=controls->findChild<QSlider*>("LayerCardSurfaceOpacity")){slider->setGeometry(sliderX,0,sliderWidth,48);slider->show();slider->raise();}if(auto *caption=controls->findChild<QLabel*>("LayerCardFillCaption")){caption->setGeometry(rightX,58,captionWidth,48);caption->show();caption->raise();}if(auto *slider=controls->findChild<QSlider*>("LayerCardSurfaceFill")){slider->setGeometry(sliderX,58,sliderWidth,48);slider->show();slider->raise();}}
-            if(auto *locks=surface->findChild<QWidget*>("LayerCardLocks")){locks->setGeometry(0,238,qMin(280,width),30);locks->setVisible(expanded);locks->raise();}
-            if(auto *rail=surface->findChild<QScrollArea*>("LayerCardSurfaceRail")){
-                rail->setVisible(expanded); rail->show(); rail->raise();
-                if(auto *host=rail->widget()){
-                    host->setMinimumHeight(56);
-                    auto *railLayout=qobject_cast<QHBoxLayout*>(host->layout());
-                    clearLayoutItems(railLayout);
-                    QStringList boards=batch.files.isEmpty()&& !currentFile.isEmpty()?QStringList{currentFile}:batch.files;
-                    if(boards.isEmpty()) boards << QString{};
-                    for(const QString &source:boards){
-                        auto *entry=new LayerRowButton(source.isEmpty()?QString("Artboard 1"):inputTitles.value(source,QFileInfo(source).completeBaseName()),{},host);
-                        entry->setObjectName("LayerCardSurfaceEntry"); entry->setToolButtonStyle(Qt::ToolButtonTextOnly);
-                        entry->setFixedSize(267,52); entry->setCheckable(true); entry->setChecked(source==currentFile||source.isEmpty());
-                        entry->setToolTip("Artboard · click to select; double-click for groups");
-                        railLayout->addWidget(entry); connect(entry,&QToolButton::clicked,this,[this,source]{if(!source.isEmpty())selectFile(source);});
-                    }
-                    auto *add=new QToolButton(host); add->setText("+ New Artboard"); add->setToolButtonStyle(Qt::ToolButtonTextOnly); add->setFixedSize(225,52);
-                    add->setStyleSheet("QToolButton{background:#101014;border:1px solid #32323a;border-radius:12px;color:#fff;padding:7px 12px;text-align:left;} QToolButton:hover{border-color:#7a4dff;}");
-                    railLayout->addWidget(add); railLayout->addStretch(); host->adjustSize(); host->setMinimumWidth(qMax(rail->viewport()->width(),host->sizeHint().width()));
-                    connect(add,&QToolButton::clicked,this,[this]{createNewProject(widthInput?widthInput->value():1024,heightInput?heightInput->value():1024,72,true,"RGB","sRGB IEC61966-2.1",Qt::transparent);});
-                }
-            }
-            // A one-item import is the common photo workflow.  Keep its
-            // current artboard and the create-artboard action as direct card
-            // controls, rather than depending on a scroll-area relayout that
-            // can be deferred while the image loader is still completing.
-            const bool singleArtboard=batch.files.size()<=1;
-            auto *active=surface->findChild<QToolButton*>("LayerCardActiveArtboard");
-            if(!active){
-                active=new LayerRowButton({}, {}, surface);
-                active->setObjectName("LayerCardActiveArtboard");
-                active->setToolButtonStyle(Qt::ToolButtonTextOnly);
-                active->setCheckable(true);
-                active->setToolTip("Current artboard · click to select");
-                connect(active,&QToolButton::clicked,this,[this]{if(!currentFile.isEmpty())selectFile(currentFile);});
-            }
-            auto *newArtboard=surface->findChild<QToolButton*>("LayerCardNewArtboard");
-            if(!newArtboard){
-                newArtboard=new QToolButton(surface);
-                newArtboard->setObjectName("LayerCardNewArtboard");
-                newArtboard->setText("+ New Artboard");
-                newArtboard->setToolButtonStyle(Qt::ToolButtonTextOnly);
-                newArtboard->setToolTip("Create a transparent artboard at the active canvas dimensions");
-                connect(newArtboard,&QToolButton::clicked,this,[this]{createNewProject(widthInput?widthInput->value():1024,heightInput?heightInput->value():1024,72,true,"RGB","sRGB IEC61966-2.1",Qt::transparent);});
-            }
-            const QString activeName=currentFile.isEmpty()?QString("Artboard 1"):inputTitles.value(currentFile,QFileInfo(currentFile).completeBaseName());
-            active->setText(activeName); active->setChecked(true); active->setGeometry(30,254,267,52);
-            newArtboard->setGeometry(305,254,qMax(150,width-335),52);
-            active->setVisible(expanded&&singleArtboard); newArtboard->setVisible(expanded&&singleArtboard);
-            if(singleArtboard){ active->raise(); newArtboard->raise(); }
-            // Keep the active document row in a regular layout-managed bar.
-            // QScrollArea deferred its child layout while media decoded, which
-            // is exactly why a one-image import could leave this row blank.
-            auto *artboardBar=surface->findChild<QWidget*>("LayerCardDirectArtboardBar");
-            if(!artboardBar){
-                artboardBar=new QWidget(surface);
-                artboardBar->setObjectName("LayerCardDirectArtboardBar");
-                artboardBar->setFixedHeight(62);
-                auto *barLayout=new QHBoxLayout(artboardBar);
-                barLayout->setContentsMargins(30,0,0,0);
-                barLayout->setSpacing(8);
-                // This bar deliberately is not owned by the card's vertical
-                // layout.  That layout owns the three rails and controls;
-                // importing media used to let it allocate the remaining
-                // height to a hidden scroll host.  Pinning this one visible
-                // row to the card bottom makes the active artboard reliable.
-                if(auto *scroll=surface->findChild<QScrollArea*>("LayerCardSurfaceRail")) scroll->hide();
-                if(auto *cardLayout=qobject_cast<QVBoxLayout*>(surface->layout())) cardLayout->setContentsMargins(0,0,0,66);
-            }
-            auto *barLayout=qobject_cast<QHBoxLayout*>(artboardBar->layout());
-            clearLayoutItems(barLayout);
-            const QString boardName=currentFile.isEmpty()?QString("Artboard 1"):inputTitles.value(currentFile,QFileInfo(currentFile).completeBaseName());
-            auto *board=new LayerRowButton(boardName,{},artboardBar);
-            board->setObjectName("LayerCardSurfaceEntry");board->setToolButtonStyle(Qt::ToolButtonTextOnly);board->setCheckable(true);board->setChecked(true);board->setFixedHeight(52);board->setToolTip("Current artboard · double-click to open groups");
-            barLayout->addWidget(board,1);connect(board,&QToolButton::clicked,this,[this]{if(!currentFile.isEmpty())selectFile(currentFile);});
-            auto *newBoard=new QToolButton(artboardBar);newBoard->setText("+ New Artboard");newBoard->setToolButtonStyle(Qt::ToolButtonTextOnly);newBoard->setFixedHeight(52);newBoard->setToolTip("Create a transparent artboard at the active canvas dimensions");barLayout->addWidget(newBoard,1);connect(newBoard,&QToolButton::clicked,this,[this]{createNewProject(widthInput?widthInput->value():1024,heightInput?heightInput->value():1024,72,true,"RGB","sRGB IEC61966-2.1",Qt::transparent);});
-            // The startup card layout owns this widget; do not manually move
-            // it after an import.  Only its contents change with the file.
-            if(auto *scroll=surface->findChild<QScrollArea*>("LayerCardSurfaceRail")) scroll->hide();
-            // The visible artboard rail is the foreground dock child below.
-            // Keep this retired layout row out of the card so it cannot
-            // duplicate a blank-canvas artboard.
-            artboardBar->hide();
-            if(auto *foreground=bottomDock->parentWidget()?bottomDock->parentWidget()->findChild<QWidget*>("LayerCardAlwaysArtboardBar"):nullptr){
-                if(auto *layout=qobject_cast<QHBoxLayout*>(foreground->layout())){
-                    auto *entry=layout->itemAt(0)?layout->itemAt(0)->widget():nullptr;
-                    if(auto *label=entry?entry->findChild<QToolButton*>("LayerCardSurfaceEntry"):nullptr){
-                        label->setProperty("artboardSource",currentFile);label->setText(boardName);label->setToolButtonStyle(Qt::ToolButtonTextOnly);label->setIcon(QIcon());
-                        const bool hasContent=!currentFile.startsWith("aspectra://")&&!original.isNull();
-                        if(auto *thumbnail=entry->findChild<QLabel*>("ActiveArtboardThumbnail")){
-                            if(hasContent) thumbnail->setPixmap(QPixmap::fromImage(original.scaled(54,54,Qt::KeepAspectRatio,Qt::SmoothTransformation)));
-                            else {QPixmap grid(54,54);QPainter painter(&grid);painter.fillRect(grid.rect(),QColor("#1a2022"));painter.setBrush(QColor("#303a3c"));painter.setPen(Qt::NoPen);for(int y=0;y<54;y+=9)for(int x=0;x<54;x+=9)if(((x/9)+(y/9))%2==0)painter.drawRect(x,y,9,9);thumbnail->setPixmap(grid);}
-                        }
-                        const bool hasEffects=std::any_of(timelineTracks.cbegin(),timelineTracks.cend(),[](const TimelineTrack &track){return track.type==TimelineTrack::Effect&&track.name.contains("effect",Qt::CaseInsensitive);});
-                        if(auto *effects=entry->findChild<QToolButton*>("LayerCardArtboardEffects"))effects->setVisible(hasEffects);
-                    }
-                    for(auto *extra:foreground->findChildren<QToolButton*>("ArtboardRailExtra")){layout->removeWidget(extra);extra->deleteLater();}
-                    auto *newButton=foreground->findChild<QToolButton*>("LayerCardAlwaysNewArtboard");
-                    int insertion=qMax(1,layout->indexOf(newButton));
-                    for(const QString &source:this->batch.files){
-                        if(source==currentFile)continue;
-                        auto *extra=new LayerRowButton(inputTitles.value(source,QFileInfo(source).completeBaseName()),{},foreground);
-                        extra->setObjectName("ArtboardRailExtra");extra->setProperty("artboardSource",source);extra->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);extra->setIconSize(QSize(42,42));extra->setFixedSize(330,70);extra->setCheckable(true);extra->setChecked(false);extra->setToolTip("Artboard · click to select");
-                        QPixmap thumbnail(source);if(!thumbnail.isNull())extra->setIcon(QIcon(thumbnail.scaled(42,42,Qt::KeepAspectRatio,Qt::SmoothTransformation)));
-                        extra->setStyleSheet("QToolButton{background:#090909;border:1px solid #292932;border-radius:18px;color:#fff;text-align:left;padding:8px;} QToolButton:hover{border-color:#35c3f6;} QToolButton:checked{border:2px solid #eb4790;}");
-                        layout->insertWidget(insertion++,extra);extra->installEventFilter(this);connect(extra,&QToolButton::clicked,this,[this,source]{selectFile(source);});
-                    }
-                    const int additionalBoards=qMax(0,this->batch.files.size()-1);
-                    // The rail content must be wider than its viewport when
-                    // multiple artboards exist.  Leaving it layout-managed at
-                    // viewport width caused the cards to overlap instead of
-                    // producing a horizontal sequence.
-                    foreground->setFixedWidth(qMax(542,30+330+8+additionalBoards*(330+8)+174));
-                    foreground->adjustSize();
-                }
-                auto *shell=bottomDock->parentWidget();
-                if(auto *viewport=shell->findChild<QScrollArea*>("ArtboardRail")){viewport->setGeometry(16,qMax(0,shell->height()-127),qMax(1,shell->width()-32),81);foreground->setMinimumWidth(qMax(520,viewport->viewport()->width()));foreground->show();viewport->show();viewport->raise();}
-                if(auto *actions=shell->findChild<QWidget*>("LayerCardArtboardActions")){actions->setGeometry(16,qMax(0,shell->height()-48),qMax(1,shell->width()-32),42);actions->show();actions->raise();}
-            }
-            QTimer::singleShot(0,this,[this]{auto *dockShell=bottomDock?bottomDock->parentWidget():nullptr;if(!dockShell)return;if(auto *viewport=dockShell->findChild<QScrollArea*>("ArtboardRail"))viewport->setGeometry(16,qMax(0,dockShell->height()-127),qMax(1,dockShell->width()-32),81);if(auto *actions=dockShell->findChild<QWidget*>("LayerCardArtboardActions"))actions->setGeometry(16,qMax(0,dockShell->height()-40),qMax(1,dockShell->width()-32),34);});
-            if(auto *active=surface->findChild<QToolButton*>("LayerCardActiveArtboard"))active->hide();
-            if(auto *add=surface->findChild<QToolButton*>("LayerCardNewArtboard"))add->hide();
-            // Media loading schedules several layouts after this method.  Pin
-            // the real two-row controls once those layouts have completed so
-            // they cannot collapse Fill back to an invisible second row.
-            QTimer::singleShot(0,this,[this]{
-                if(!bottomDock)return;
-                auto *card=bottomDock->findChild<QWidget*>("LayerCardSurface");
-                auto *controls=bottomDock->findChild<QWidget*>("LayerCardSurfaceControls");
-                if(!card||!controls||!card->property("layerExpanded").toBool())return;
-                const int width=controls->parentWidget()?controls->parentWidget()->width():bottomDock->width();
-                controls->setFixedHeight(106); controls->setGeometry(0,180,width,106); controls->show();
-                const int rightX=qMin(280,width), captionWidth=qMin(52,qMax(0,width-rightX));
-                const int sliderX=rightX+captionWidth+6, sliderWidth=qMax(0,width-sliderX);
-                if(auto *label=controls->findChild<QLabel*>("LayerCardOpacityCaption")){label->setGeometry(rightX,0,captionWidth,48);label->show();}
-                if(auto *slider=controls->findChild<QSlider*>("LayerCardSurfaceOpacity")){slider->setMinimumHeight(48);slider->setGeometry(sliderX,0,sliderWidth,48);slider->show();slider->raise();}
-                if(auto *label=controls->findChild<QLabel*>("LayerCardFillCaption")){label->setGeometry(rightX,58,captionWidth,48);label->show();}
-                if(auto *slider=controls->findChild<QSlider*>("LayerCardSurfaceFill")){slider->setMinimumHeight(48);slider->setGeometry(sliderX,58,sliderWidth,48);slider->show();slider->raise();}
-                controls->raise();
-            });
-            return;
-        }
-    }
-    if(bottomDock) return;
-    {
-    if(bottomDock){const bool expanded=bottomDock->findChild<QWidget*>("LayerCardSurface")&&bottomDock->findChild<QWidget*>("LayerCardSurface")->property("layerExpanded").toBool();bottomDock->setFixedHeight(expanded?500:190);if(bottomDock->property("absoluteDock").toBool()){auto *shell=bottomDock->parentWidget();if(shell){bottomDock->setGeometry(16,qMax(0,shell->height()-bottomDock->height()),qMax(1,shell->width()-32),bottomDock->height());bottomDock->show();bottomDock->raise();}}if(auto *navigator=bottomDock->findChild<QWidget*>("LayerCardNavigator")){navigator->setGeometry(0,0,bottomDock->width(),bottomDock->height());navigator->hide();}if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){surface->setGeometry(0,0,bottomDock->width(),bottomDock->height());surface->show();surface->raise();}}
-    if(tabCarousel&&!findChild<QScrollArea*>("MainToolRail")){auto *settingsHost=tabCarousel->parentWidget();auto *settingsLayout=qobject_cast<QVBoxLayout*>(settingsHost?settingsHost->layout():nullptr);if(settingsLayout){auto *toolRail=new QScrollArea(settingsHost);toolRail->setObjectName("MainToolRail");toolRail->setFixedHeight(58);toolRail->setFrameShape(QFrame::NoFrame);toolRail->setWidgetResizable(false);toolRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);toolRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *toolHost=new QWidget(toolRail);toolHost->setMinimumWidth(620);auto *toolLayout=new QHBoxLayout(toolHost);toolLayout->setContentsMargins(0,3,0,3);toolLayout->setSpacing(9);toolLayout->addStretch();toolRail->setWidget(toolHost);toolRail->setStyleSheet("QScrollArea{background:#000;border:none;} QToolButton#MainToolButton{background:#000;border:1px solid #fff;border-radius:23px;} QToolButton#MainToolButton:hover{background:#111114;border:2px solid #fff;} QToolButton#MainToolButton:checked{border:2px solid #7a4dff;background:#121017;}");auto activate=[this,settingsHost](int page){tabs->setCurrentIndex(page);tabs->show();settingsHost->setMinimumHeight(112);settingsHost->setMaximumHeight(QWIDGETSIZE_MAX);for(auto *button:tabCarousel->findChildren<QToolButton*>("CarouselTab"))if(button->toolTip()==tabs->tabText(page)+" settings")button->setChecked(true);if(auto *split=qobject_cast<QSplitter*>(settingsHost->parentWidget())){const int space=split->height();split->setSizes({qMax(300,space*3/4),qMax(112,space/4)});}};auto selectSubject=[this]{if(currentFile.isEmpty()||original.isNull())return;QImage source=original.convertToFormat(QImage::Format_RGBA8888);qint64 r=0,g=0,b=0,n=0;const int band=qMax(2,qMin(source.width(),source.height())/24);for(int y=0;y<source.height();++y)for(int x=0;x<source.width();++x)if(x<band||y<band||x>=source.width()-band||y>=source.height()-band){QColor pixel=source.pixelColor(x,y);r+=pixel.red();g+=pixel.green();b+=pixel.blue();++n;}const QColor key(n?r/n:0,n?g/n:255,n?b/n:0);QImage mask(source.size(),QImage::Format_Grayscale8);for(int y=0;y<source.height();++y)for(int x=0;x<source.width();++x){QColor pixel=source.pixelColor(x,y);const double distance=std::sqrt(std::pow((pixel.red()-key.red())/255.,2)+std::pow((pixel.green()-key.green())/255.,2)+std::pow((pixel.blue()-key.blue())/255.,2));mask.setPixel(x,y,qBound(0,qRound((distance-.10)/.18*255),255));}canvasLayers[currentFile].mask=mask;preview->setLayerMask(mask);layerStyle.keyColor=key;if(chromaKeyEnabled)chromaKeyEnabled->setChecked(true);status->setText("Subject selection created · refine with the brush tool");refresh();};auto addText=[this]{if(currentFile.isEmpty()||original.isNull()){showError("Import media before adding text.");return;}TimelineTrack track;track.type=TimelineTrack::Text;track.name="Text";track.text="Text";track.start=0;track.end=qMax(5.,media.duration);timelineTracks<<track;updateTrackPanel();status->setText("Editable text layer added");};auto addShape=[this]{if(currentFile.isEmpty()||original.isNull()){showError("Import media before adding a shape layer.");return;}TimelineTrack track;track.type=TimelineTrack::Image;track.name="Shape layer";track.image=QImage(original.size(),QImage::Format_ARGB32);track.image.fill(Qt::transparent);track.start=0;track.end=qMax(5.,media.duration);timelineTracks<<track;updateTrackPanel();status->setText("Transparent shape layer added");};auto makeTool=[&](const QString &name,const QString &file,const QString &tip,std::function<void()> action,const QList<QPair<QString,std::function<void()>>> &alternates){auto *tool=new QToolButton(toolHost);tool->setObjectName("MainToolButton");tool->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/"+file));tool->setIconSize(QSize(25,25));tool->setToolButtonStyle(Qt::ToolButtonIconOnly);tool->setFixedSize(46,46);tool->setToolTip(tip);tool->setContextMenuPolicy(Qt::CustomContextMenu);toolLayout->addWidget(tool);connect(tool,&QToolButton::clicked,this,action);connect(tool,&QWidget::customContextMenuRequested,this,[tool,alternates](const QPoint &point){QMenu menu(tool);for(const auto &alternate:alternates){auto *entry=menu.addAction(alternate.first);QObject::connect(entry,&QAction::triggered,tool,alternate.second);}menu.exec(tool->mapToGlobal(point));});};makeTool("Move","move tool.png","Move tool · set the active layer position on the Canvas tab",[activate,this]{activate(0);if(canvasX)canvasX->setFocus();status->setText("Move tool · adjust layer X and Y");},{{"Move layer",[activate,this]{activate(0);if(canvasX)canvasX->setFocus();}}});makeTool("Select","object selection.png","Object Selection · automatically creates an editable subject mask",[activate,selectSubject]{activate(2);selectSubject();},{{"Object Selection",[activate,selectSubject]{activate(2);selectSubject();}},{"Quick Selection Brush",[activate,this]{activate(2);preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);status->setText("Quick selection brush · paint the subject");}},{"Magic Wand / background key",[activate,this]{activate(1);preview->setEyedropper(true);status->setText("Sample the background color in the preview");}}});makeTool("Crop","crop tool.png","Crop tool · opens the canvas crop controls",[activate,this]{activate(0);if(zoom)zoom->setFocus();status->setText("Crop tool · adjust crop scale and safe bounds");},{{"Crop",[activate,this]{activate(0);if(zoom)zoom->setFocus();}},{"Perspective / frame",[activate]{activate(0);}}});makeTool("Sample","icon_color keying.png","Eyedropper · click the preview to sample a key color",[activate,this]{activate(1);preview->setEyedropper(true);status->setText("Eyedropper active · click a color in the preview");},{{"Eyedropper",[this]{preview->setEyedropper(true);}},{"Color key",[activate]{activate(1);}}});makeTool("Brush","brush tool.png","Selection Brush · paint into the editable layer mask",[activate,this]{activate(2);preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);status->setText("Selection brush add · drag in the preview");},{{"Brush add",[this]{preview->setMaskBrush(true,maskBrushSize?maskBrushSize->value():48);}},{"Brush subtract",[this]{preview->setMaskBrush(false,maskBrushSize?maskBrushSize->value():48);}}});makeTool("Text","horizontal type tool.png","Type tool · add an editable text track",[addText]{addText();},{{"Horizontal Type",addText},{"Vertical Type",addText}});makeTool("Shape","shape layer.png","Shape layer · add a transparent compositing layer",[addShape]{addShape();},{{"Rectangle",addShape},{"Ellipse",addShape},{"Custom Shape",addShape}});makeTool("Hand","hand tool.png","Hand tool · drag the preview to pan while zoomed",[this]{preview->setCursor(Qt::OpenHandCursor);status->setText("Hand tool · drag the preview to pan");},{{"Hand",[this]{preview->setCursor(Qt::OpenHandCursor);}},{"Reset view",[this]{preview->setViewZoom(1.0);}}});makeTool("Zoom","zoom in cursor.png","Zoom tool · increases preview magnification",[this]{preview->setViewZoom(1.5);status->setText("Zoom tool · scroll or use Preview Zoom to refine");},{{"Zoom in",[this]{preview->setViewZoom(1.5);}},{"Zoom out",[this]{preview->setViewZoom(1.0);}}});toolLayout->addStretch();settingsLayout->insertWidget(settingsLayout->indexOf(tabCarousel),toolRail);connect(preview,&PreviewWidget::colorSampled,this,[this](QColor color){layerStyle.keyColor=color;if(chromaKeyEnabled)chromaKeyEnabled->setChecked(true);status->setText("Sampled key color · "+color.name());refresh();});}}
-    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail");mainToolRail&&!mainToolRail->property("fluidPrimaryTools").toBool()){
-        mainToolRail->setProperty("fluidPrimaryTools",true);
-        mainToolRail->setStyleSheet("QScrollArea{background:#000;border:none;}");
-        auto *toolLayout=qobject_cast<QHBoxLayout*>(mainToolRail->widget()->layout());
-        for(auto *legacy:mainToolRail->findChildren<QToolButton*>("MainToolButton")){
-            auto *fluid=new FluidToolButton(mainToolRail->widget());
-            fluid->setObjectName("MainToolButton");fluid->setIcon(legacy->icon());fluid->setIconSize(legacy->iconSize());fluid->setToolButtonStyle(Qt::ToolButtonIconOnly);
-            fluid->setFixedSize(legacy->size());fluid->setToolTip(legacy->toolTip());fluid->setCheckable(legacy->isCheckable());fluid->setChecked(legacy->isChecked());
-            fluid->setContextMenuPolicy(Qt::CustomContextMenu);
-            if(toolLayout)toolLayout->replaceWidget(legacy,fluid);
-            connect(fluid,&QWidget::customContextMenuRequested,legacy,[legacy](const QPoint &point){
-                const QPoint global=legacy->mapToGlobal(point);QContextMenuEvent forwarded(QContextMenuEvent::Mouse,legacy->mapFromGlobal(global),global);QCoreApplication::sendEvent(legacy,&forwarded);
-            });
-            legacy->setObjectName("LegacyMainToolButton");legacy->hide();
-        }
-    }
-    if(!artboardRail&&bottomDock&&layerDrawer){artboardRail=new QScrollArea(bottomDock);artboardRail->setObjectName("ArtboardRail");artboardRail->setWidgetResizable(true);artboardRail->setFrameShape(QFrame::NoFrame);artboardRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);artboardRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);artboardRail->setFixedHeight(70);artboardRailContent=new QWidget(artboardRail);auto *railLayout=new QHBoxLayout(artboardRailContent);railLayout->setContentsMargins(4,2,4,2);railLayout->setSpacing(8);railLayout->addStretch();artboardRail->setWidget(artboardRailContent);artboardRail->setStyleSheet("QScrollArea{background:#000;border:none;} QToolButton{background:#111114;border:1px solid #30303a;border-radius:12px;color:#fff;padding:5px 10px;text-align:left;} QToolButton:checked{border-color:#7a4dff;background:#17131e;} QToolButton:hover{border-color:#3ddcff;}");if(auto *dockLayout=qobject_cast<QVBoxLayout*>(bottomDock->layout()))dockLayout->insertWidget(dockLayout->indexOf(layerDrawer),artboardRail);}
-    if(bottomDock){const int cardWidth=bottomDock->width();if(auto *tools=bottomDock->findChild<QWidget*>("BottomToolbarRail"))tools->setGeometry(0,0,cardWidth,44);if(auto *modes=bottomDock->findChild<QWidget*>("BottomModeRail"))modes->setGeometry(0,48,cardWidth,52);if(auto *panel=bottomDock->findChild<QWidget*>("LayerPanelRail"))panel->setGeometry(0,106,cardWidth,42);if(auto *toggle=bottomDock->findChild<QToolButton*>("LayerCardToggle"))toggle->setGeometry(0,154,cardWidth,26);if(auto *controls=bottomDock->findChild<QWidget*>("LayerCardSurfaceControls"))controls->setGeometry(0,180,cardWidth,106);if(auto *rail=bottomDock->findChild<QScrollArea*>("LayerCardSurfaceRail"))rail->setGeometry(0,304,cardWidth,62);}
-    if(bottomDock){if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){const bool expanded=surface->property("layerExpanded").toBool();auto *shell=bottomDock->parentWidget();const int dockHeight=shell?qMax(190,qRound(shell->height()*(expanded?.65:.35))):(expanded?500:190);bottomDock->setFixedHeight(dockHeight);if(shell){bottomDock->setGeometry(16,qMax(0,shell->height()-dockHeight),qMax(1,shell->width()-32),dockHeight);if(auto *outer=qobject_cast<QVBoxLayout*>(shell->layout()))outer->setContentsMargins(16,12,16,dockHeight+12);}if(auto *controls=bottomDock->findChild<QWidget*>("LayerCardSurfaceControls"))controls->setVisible(expanded);if(auto *rail=bottomDock->findChild<QScrollArea*>("LayerCardSurfaceRail"))rail->setVisible(expanded);if(auto *active=bottomDock->findChild<QToolButton*>("LayerCardActiveArtboard"))active->setVisible(expanded);if(auto *add=bottomDock->findChild<QToolButton*>("LayerCardNewArtboard"))add->setVisible(expanded);}}
-    if(auto *batchRail=findChild<QWidget*>("BatchNavigationRail")){batchRail->hide();batchRail->setFixedHeight(0);}
-    // The bottom inspector is one card host.  Its heading changes with the
-    // drill-down level instead of exposing all artboard groups and layers at
-    // once.  Double-clicking keeps the existing tree navigation but makes the
-    // card state explicit: Artboards → Groups → Layers → Properties.
-    if(bottomDock&&layerDrawer&&!bottomDock->findChild<QLabel*>("LayerCardTitle")){
-        auto *cardTitle=label("ARTBOARDS","section");cardTitle->setObjectName("LayerCardTitle");cardTitle->setContentsMargins(8,4,8,2);
-        if(auto *dockLayout=qobject_cast<QVBoxLayout*>(bottomDock->layout()))dockLayout->insertWidget(dockLayout->indexOf(layerDrawer),cardTitle);
-        connect(layerDrawer,&QTreeWidget::itemClicked,this,[this,cardTitle](QTreeWidgetItem *item,int){if(!item)return;cardTitle->setText(item->parent()?(item->parent()->parent()?"LAYER PROPERTIES":"LAYERS"):"ARTBOARDS");});
-        connect(layerDrawer,&QTreeWidget::itemDoubleClicked,this,[cardTitle](QTreeWidgetItem *item,int){if(!item)return;cardTitle->setText(item->parent()?(item->parent()->parent()?"LAYER PROPERTIES":"LAYERS"):"ARTBOARD GROUPS");});
-    }
-    // Keep the tool strip quieter than the category rail; it is navigation,
-    // not the primary content of the portrait workspace.
-    for(auto *tool:findChildren<QToolButton*>("MainToolButton")){tool->setFixedSize(40,40);tool->setIconSize(QSize(20,20));}
-    for(auto *tool:findChildren<QToolButton*>("NativeToolButton")){tool->setFixedSize(40,40);tool->setIconSize(QSize(20,20));}
-    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail")){mainToolRail->setFixedHeight(52);mainToolRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);if(mainToolRail->widget())mainToolRail->widget()->setFixedWidth(520);auto *settingsHost=mainToolRail->parentWidget();auto resizeRailStack=[this,settingsHost]{const bool expanded=tabs&&tabs->isVisible();const int reserved=expanded?300:110;settingsHost->setMinimumHeight(reserved);settingsHost->setMaximumHeight(expanded?QWIDGETSIZE_MAX:reserved);if(auto *split=qobject_cast<QSplitter*>(settingsHost->parentWidget())){const int total=split->height();split->setSizes({qMax(240,total-reserved),reserved});}};if(!mainToolRail->property("railStackBound").toBool()){mainToolRail->setProperty("railStackBound",true);connect(tabs,&QTabWidget::currentChanged,mainToolRail,[resizeRailStack](int){QTimer::singleShot(0,[resizeRailStack]{resizeRailStack();});});for(auto *tool:mainToolRail->findChildren<QToolButton*>("MainToolButton"))connect(tool,&QToolButton::clicked,mainToolRail,[resizeRailStack]{QTimer::singleShot(0,[resizeRailStack]{resizeRailStack();});});}resizeRailStack();}
-    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail");mainToolRail&&!mainToolRail->property("fluidCenterBound").toBool()){
-        mainToolRail->setProperty("fluidCenterBound",true);
-        for(auto *tool:mainToolRail->findChildren<QToolButton*>()){
-            if(tool->objectName()!="MainToolButton"&&tool->objectName()!="NativeToolButton")continue;
-            connect(tool,&QToolButton::clicked,mainToolRail,[mainToolRail,tool]{
-                auto *bar=mainToolRail->horizontalScrollBar();
-                int targetX=tool->geometry().center().x()-mainToolRail->viewport()->width()/2;
-                targetX=qBound(bar->minimum(),targetX,bar->maximum());
-                auto *animation=new QPropertyAnimation(bar,"value",mainToolRail);
-                animation->setDuration(250);animation->setEasingCurve(QEasingCurve::OutCubic);animation->setEndValue(targetX);
-                animation->start(QAbstractAnimation::DeleteWhenStopped);
-            });
-        }
-    }
-    // A settings rail is a fixed vertical stack, never an overlay.  Giving the
-    // splitter an exact height keeps every rail fully painted and leaves the
-    // preview in the remaining space.
-    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail")){
-        mainToolRail->setFixedHeight(58);
-        mainToolRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        if(mainToolRail->widget())mainToolRail->widget()->setFixedSize(620,58);
-        auto *settingsHost=mainToolRail->parentWidget();
-        auto applyRailStack=[this,settingsHost]{
-            // Selecting a sub-setting hides the QTabWidget in favor of the
-            // compact active-setting card.  That is still an expanded drawer.
-            const auto *subRail=findChild<QScrollArea*>("SubSettingsRail");
-            const auto *activeCard=findChild<QWidget*>("ActiveSettingCard");
-            const bool expanded=(tabs&&tabs->isVisible())||(subRail&&subRail->isVisible())||(activeCard&&activeCard->isVisible());
-            const int reserved=expanded?300:110;
-            settingsHost->setFixedHeight(reserved);
-            if(auto *split=qobject_cast<QSplitter*>(settingsHost->parentWidget())){
-                if(auto *stage=split->widget(0)){stage->setMaximumHeight(expanded?260:QWIDGETSIZE_MAX);stage->setMinimumHeight(expanded?220:240);}
-                split->setSizes({qMax(220,split->height()-reserved),reserved});
-            }
-        };
-        if(!mainToolRail->property("fixedRailStackBound").toBool()){
-            mainToolRail->setProperty("fixedRailStackBound",true);
-            connect(tabs,&QTabWidget::currentChanged,mainToolRail,[applyRailStack](int){
-                QTimer::singleShot(0,[applyRailStack]{applyRailStack();});
-            });
-            for(auto *tool:mainToolRail->findChildren<QToolButton*>("MainToolButton")){
-                connect(tool,&QToolButton::clicked,mainToolRail,[applyRailStack]{
-                    QTimer::singleShot(0,[applyRailStack]{applyRailStack();});
-                });
-            }
-        }
-        applyRailStack();
-    }
-    // Use the named Aspectra assets, rather than visually similar placeholders.
-    // Tooltips are stable identifiers for these icon-only controls.
-    if(tabCarousel){
-        const QString iconRoot="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";
-        const QHash<QString,QString> categoryIcons{
-            {"Canvas","icon_canvas.png"}, {"Adjust","editor_adjustments.png"},
-            {"Select","editor_select all.png"}, {"Trace","editor_trace.png"},
-            {"Effects","editor_effects.png"}, {"Video","video.png"},
-            {"Texture","icon_textures.png"}, {"Pattern","icon_patterns.png"},
-            {"Export","editor_export map.png"}
-        };
-        for(auto *control:tabCarousel->findChildren<QToolButton*>("CarouselTab")){
-            const QString name=control->text();
-            if(categoryIcons.contains(name))control->setIcon(whiteIcon(iconRoot+categoryIcons.value(name)));
-        }
-    }
-    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail")){
-        mainToolRail->viewport()->installEventFilter(this);
-        // updateLayerDrawer runs again for every imported item.  The legacy
-        // compact-rail path shrinks the content to 520 px there; restore the
-        // real tool-strip width on every refresh so icons never bunch up.
-        if(mainToolRail->property("nativeToolEngineBound").toBool())mainToolRail->widget()->setFixedWidth(2100);
-        if(auto *railLayout=qobject_cast<QHBoxLayout*>(mainToolRail->widget()->layout())){
-            railLayout->setContentsMargins(12,3,12,3);
-            railLayout->setSpacing(14);
-        }
-        // Match the other horizontal icon rails: tools never compress into a
-        // cluster, and the viewport visibly fades at a scrollable edge.
-        if(!mainToolRail->property("toolRailFadesBound").toBool()){
-            mainToolRail->setProperty("toolRailFadesBound",true);
-            auto *leftFade=new QWidget(mainToolRail->viewport());auto *rightFade=new QWidget(mainToolRail->viewport());leftFade->setObjectName("MainToolRailLeftFade");rightFade->setObjectName("MainToolRailRightFade");
-            for(auto *fade:{leftFade,rightFade}){fade->setAttribute(Qt::WA_TransparentForMouseEvents);fade->setStyleSheet("background:transparent;");}
-            leftFade->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #000000,stop:.55 rgba(0,0,0,220),stop:1 rgba(0,0,0,0));");
-            rightFade->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0,0,0,0),stop:.45 rgba(0,0,0,220),stop:1 #000000);");
-            auto updateFades=[mainToolRail,leftFade,rightFade]{auto *view=mainToolRail->viewport();leftFade->setGeometry(0,0,42,view->height());rightFade->setGeometry(view->width()-42,0,42,view->height());auto *bar=mainToolRail->horizontalScrollBar();leftFade->setVisible(bar->value()>0);rightFade->setVisible(bar->value()<bar->maximum());leftFade->raise();rightFade->raise();};
-            connect(mainToolRail->horizontalScrollBar(),&QScrollBar::valueChanged,mainToolRail,[updateFades](int){updateFades();});
-            QTimer::singleShot(0,mainToolRail,updateFades);
-        }
-        const QString iconRoot="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";
-        const QHash<QString,QString> toolIcons{
-            {"Move","move tool.png"}, {"Object Selection","object selection.png"},
-            {"Crop","crop tool.png"}, {"Eyedropper","icon_color_.png"},
-            {"Selection Brush","selection brush.png"}, {"Type","horizontal type tool.png"},
-            {"Shape","custom shape tool.png"}, {"Zoom","zoom in cursor.png"}
-        };
-        for(auto *control:mainToolRail->findChildren<QToolButton*>("MainToolButton")){
-            for(auto it=toolIcons.cbegin();it!=toolIcons.cend();++it){
-                if(control->toolTip().startsWith(it.key())){control->setIcon(whiteIcon(iconRoot+it.value()));break;}
-            }
-        }
-        if(!mainToolRail->property("nativeToolEngineBound").toBool()){
-            mainToolRail->setProperty("nativeToolEngineBound",true);
-            connect(preview,&PreviewWidget::toolStroke,this,[this](QPointF point,CanvasTool tool,int diameter,Qt::KeyboardModifiers modifiers){
-                if(currentFile.isEmpty()||original.isNull())return;
-                auto &layer=canvasLayers[currentFile];
-                if(tool==CanvasTool::CloneStamp&&modifiers.testFlag(Qt::AltModifier)){layer.cloneSource=point;layer.hasCloneSource=true;status->setText("Clone source sampled");return;}
-                if(!rasterStrokeOpen){recordUndoState();rasterStrokeOpen=true;}
-                RasterToolEngine::stroke(original,tool,point,diameter,layerStyle.keyColor,layer.cloneSource,layer.hasCloneSource);
-                layer.nativeSize=original.size();media.size=original.size();refresh();
-            });
-            connect(preview,&PreviewWidget::toolFinished,this,[this](QVector<QPointF> path,CanvasTool tool,Qt::KeyboardModifiers){
-                rasterStrokeOpen=false;
-                if(currentFile.isEmpty()||original.isNull()||path.isEmpty())return;
-                auto &layer=canvasLayers[currentFile];QImage selection;
-                if(tool==CanvasTool::RectangularMarquee)selection=RasterToolEngine::rectangularSelection(original.size(),path.first(),path.last(),false);
-                else if(tool==CanvasTool::EllipticalMarquee)selection=RasterToolEngine::rectangularSelection(original.size(),path.first(),path.last(),true);
-                else if(tool==CanvasTool::Lasso||tool==CanvasTool::Pen)selection=RasterToolEngine::lassoSelection(original.size(),path);
-                else if(tool==CanvasTool::MagicWand||tool==CanvasTool::ObjectSelect)selection=RasterToolEngine::floodSelection(original,path.first(),36);
-                else if(tool==CanvasTool::Move){const QPointF delta=path.last()-path.first();layer.position+=QPointF(delta.x()*original.width(),delta.y()*original.height());refresh();status->setText("Layer moved");return;}
-                else if(tool==CanvasTool::Type){TimelineTrack text;text.type=TimelineTrack::Text;text.name="Text";text.text="Text";text.position={path.first().x()*original.width(),path.first().y()*original.height()};text.start=0;text.end=qMax(5.,media.duration);timelineTracks<<text;updateTrackPanel();if(trackList){trackList->setCurrentRow(timelineTracks.size()-1);QTimer::singleShot(0,this,[this]{if(textLayerInput){textLayerInput->setFocus();textLayerInput->selectAll();}});}refresh();status->setText("Text layer placed · type to replace Text");return;}
-                else if(tool==CanvasTool::Crop){recordUndoState();RasterToolEngine::crop(original,path.first(),path.last());layer.nativeSize=original.size();media.size=original.size();layer.selection={};preview->clearSelectionMask();refresh();status->setText("Crop committed");return;}
-                else if(tool==CanvasTool::Gradient){recordUndoState();RasterToolEngine::gradient(original,path.first(),path.last(),layerStyle.keyColor);refresh();status->setText("Gradient applied");return;}
-                if(!selection.isNull()){layer.selection=selection;preview->setSelectionMask(selection);status->setText("Selection active · marching ants visible");}
-            });
-            const QList<QPair<CanvasTool,QPair<QString,QString>>> extendedTools{
-                {CanvasTool::RectangularMarquee,{"rectangle marquee tool.png","Rectangular Marquee"}},
-                {CanvasTool::EllipticalMarquee,{"circle marquee tool.png","Elliptical Marquee"}},
-                {CanvasTool::Lasso,{"lasso tool.png","Lasso"}},
-                {CanvasTool::MagicWand,{"magic selection.png","Magic Wand"}},
-                {CanvasTool::Crop,{"crop tool.png","Crop"}},
-                {CanvasTool::SpotHeal,{"spot healing tool_.png","Spot Healing"}},
-                {CanvasTool::HealingBrush,{"healing tool.png","Healing Brush"}},
-                {CanvasTool::Patch,{"patch tool.png","Patch"}},
-                {CanvasTool::CloneStamp,{"stamp tool.png","Clone Stamp · Alt-click sets source"}},
-                {CanvasTool::Brush,{"brush tool.png","Brush"}},
-                {CanvasTool::Pencil,{"pencil tool.png","Pencil"}},
-                {CanvasTool::Eraser,{"eraser tool.png","Eraser"}},
-                {CanvasTool::Gradient,{"gradient tool.png","Gradient"}},
-                {CanvasTool::Blur,{"blur tool.png","Blur"}},
-                {CanvasTool::Sharpen,{"sharpen tool.png","Sharpen"}},
-                {CanvasTool::Smudge,{"mixer brush tool.png","Smudge"}},
-                {CanvasTool::Dodge,{"dodge tool.png","Dodge"}},
-                {CanvasTool::Burn,{"burn tool.png","Burn"}},
-                {CanvasTool::Sponge,{"sponge tool.png","Sponge"}},
-                {CanvasTool::Pen,{"pen tool.png","Pen / path selection"}}
-            };
-            auto *toolLayout=qobject_cast<QHBoxLayout*>(mainToolRail->widget()->layout());
-            // The original compact rail was centered with two expanding spacers.
-            // A real tool strip begins at its first tool and overflows horizontally.
-            if(toolLayout->count()>0&&toolLayout->itemAt(0)->spacerItem())delete toolLayout->takeAt(0);
-            for(const auto &entry:extendedTools){
-                auto *control=new FluidToolButton(mainToolRail->widget());control->setObjectName("NativeToolButton");control->setIcon(whiteIcon(iconRoot+entry.second.first));control->setIconSize(QSize(25,25));control->setToolButtonStyle(Qt::ToolButtonIconOnly);control->setFixedSize(46,46);control->setToolTip(entry.second.second);control->setCheckable(true);
-                toolLayout->insertWidget(qMax(0,toolLayout->count()-1),control);
-                connect(control,&QToolButton::clicked,this,[this,entry,mainToolRail,control]{for(auto *peer:mainToolRail->findChildren<QToolButton*>("NativeToolButton"))if(peer!=control)peer->setChecked(false);preview->setCanvasTool(entry.first,maskBrushSize?maskBrushSize->value():48);status->setText(entry.second.second+" active");});
-            }
-            mainToolRail->widget()->setMinimumWidth(2100);
-            // Replace the former "open a random category" callbacks. Primary
-            // tools now have one deterministic action and one active state.
-            const QHash<QString,CanvasTool> primaryTools{
-                {"Move tool",CanvasTool::Move},{"Object Selection",CanvasTool::ObjectSelect},
-                {"Crop tool",CanvasTool::Crop},{"Eyedropper",CanvasTool::Eyedropper},
-                {"Selection Brush",CanvasTool::Brush},{"Type tool",CanvasTool::Type},
-                {"Shape layer",CanvasTool::Shape},{"Hand tool",CanvasTool::Hand},{"Zoom tool",CanvasTool::Zoom}
-            };
-            auto activatePrimary=[this,mainToolRail](QToolButton *control,CanvasTool tool){
-                for(auto *peer:mainToolRail->findChildren<QToolButton*>())if(peer->objectName()=="MainToolButton"||peer->objectName()=="NativeToolButton")peer->setChecked(peer==control);
-                if(tool==CanvasTool::Eyedropper){preview->setEyedropper(true);status->setText("Eyedropper active");return;}
-                if(tool==CanvasTool::Hand){preview->setCanvasTool(CanvasTool::None);preview->setCursor(Qt::OpenHandCursor);status->setText("Hand tool active · drag to pan");return;}
-                if(tool==CanvasTool::Zoom){preview->setCanvasTool(CanvasTool::None);preview->setViewZoom(1.25);status->setText("Zoom tool active");return;}
-                if(tool==CanvasTool::Type){if(currentFile.isEmpty()||original.isNull()){showError("Import media before placing text.");return;}preview->setCanvasTool(CanvasTool::Type);status->setText("Type tool active · click the preview to place text");return;}
-                if(tool==CanvasTool::Shape){if(!currentFile.isEmpty()&&!original.isNull()){TimelineTrack track;track.type=TimelineTrack::Image;track.name="Shape layer";track.image=QImage(original.size(),QImage::Format_ARGB32);track.image.fill(Qt::transparent);track.start=0;track.end=qMax(5.,media.duration);timelineTracks<<track;updateTrackPanel();}status->setText("Shape layer added");return;}
-                preview->setCanvasTool(tool,maskBrushSize?maskBrushSize->value():48);status->setText(control->toolTip().section(QChar(0x00b7),0,0)+" active");
-            };
-            for(auto *control:mainToolRail->findChildren<QToolButton*>("MainToolButton")){
-                CanvasTool selected=CanvasTool::None;for(auto it=primaryTools.cbegin();it!=primaryTools.cend();++it)if(control->toolTip().startsWith(it.key())){selected=it.value();break;}
-                if(selected==CanvasTool::None)continue;
-                QObject::disconnect(control,nullptr,this,nullptr);control->setCheckable(true);
-                connect(control,&QToolButton::clicked,this,[activatePrimary,control,selected]{activatePrimary(control,selected);});
-            }
-            for(auto *control:mainToolRail->findChildren<QToolButton*>("NativeToolButton"))connect(control,&QToolButton::clicked,this,[mainToolRail,control]{for(auto *peer:mainToolRail->findChildren<QToolButton*>())if(peer->objectName()=="MainToolButton"||peer->objectName()=="NativeToolButton")peer->setChecked(peer==control);});
-        }
-    }
-    if(auto *mainToolRail=findChild<QScrollArea*>("MainToolRail");mainToolRail&&!mainToolRail->property("fluidNativeCenterBound").toBool()){
-        mainToolRail->setProperty("fluidNativeCenterBound",true);
-        for(auto *tool:mainToolRail->findChildren<QToolButton*>("NativeToolButton"))connect(tool,&QToolButton::clicked,mainToolRail,[mainToolRail,tool]{
-            auto *bar=mainToolRail->horizontalScrollBar();
-            int targetX=tool->geometry().center().x()-mainToolRail->viewport()->width()/2;
-            targetX=qBound(bar->minimum(),targetX,bar->maximum());
-            auto *animation=new QPropertyAnimation(bar,"value",mainToolRail);
-            animation->setDuration(250);animation->setEasingCurve(QEasingCurve::OutCubic);animation->setEndValue(targetX);
-            animation->start(QAbstractAnimation::DeleteWhenStopped);
-        });
-    }
-    if(!layerDrawer)return;
-    // The persistent bottom surface is a Photoshop-style card navigator,
-    // not a permanently expanded tree.  The hidden tree remains only as the
-    // backing model while the visible hierarchy is Artboard → Group → Layer
-    // → Properties.
-    auto *navigator=bottomDock?bottomDock->findChild<QWidget*>("LayerCardNavigator"):nullptr;
-    if(!navigator&&bottomDock){
-        layerDrawer->hide();navigator=new QWidget(bottomDock);navigator->setObjectName("LayerCardNavigator");navigator->setProperty("level",0);navigator->setStyleSheet("QWidget#LayerCardNavigator{background:#000;border:0;} QLabel#LayerCardHeading{color:#fff;font-size:10px;font-weight:700;padding:0 4px;} QToolButton#LayerCardBack{background:transparent;border:0;border-radius:15px;} QToolButton#LayerCardBack:hover{background:#121217;} QComboBox#LayerCardBlendMode{min-width:150px;max-width:180px;min-height:26px;padding:3px 10px;background:#0b0b0e;border:1px solid #27272f;border-radius:13px;} QToolButton#LayerCardEntry{background:#0d0d11;border:1px solid #25252e;border-radius:16px;color:#fff;text-align:left;padding:0 15px;min-height:52px;font-size:12px;font-weight:600;} QToolButton#LayerCardEntry:hover{background:#15151b;border-color:#fff;} QToolButton#LayerCardEntry[hierarchy=\"artboard\"]:checked{border:2px solid #7a4dff;background:#15101d;} QToolButton#LayerCardEntry[hierarchy=\"group\"]:checked{border:2px solid #3ddcff;background:#0d171a;} QToolButton#LayerCardEntry[hierarchy=\"layer\"]:checked{border:2px solid #4fa4ff;background:#0d131c;}");auto *navLayout=new QVBoxLayout(navigator);navLayout->setContentsMargins(8,2,8,5);navLayout->setSpacing(3);
-        auto *topRow=new QHBoxLayout;auto *back=new QToolButton(navigator);back->setObjectName("LayerCardBack");back->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/back.png"));back->setIconSize(QSize(20,20));back->setFixedSize(34,34);back->setToolTip("Back one layer hierarchy level");back->hide();auto *heading=label("LAYERS","section");heading->setObjectName("LayerCardHeading");topRow->addWidget(back);topRow->addWidget(heading,1);navLayout->addLayout(topRow);
-        auto *controlsWidget=new QWidget(navigator);controlsWidget->setObjectName("LayerCardControls");auto *controls=new QGridLayout(controlsWidget);controls->setContentsMargins(0,0,0,0);controls->setHorizontalSpacing(10);controls->setVerticalSpacing(3);auto *mode=new QComboBox(navigator);mode->setObjectName("LayerCardBlendMode");mode->addItems({"Normal","Multiply","Screen","Overlay","Lighten","Darken"});auto *opacityLabel=label("Opacity","muted");auto *opacity=new GradientSlider(navigator);opacity->setObjectName("LayerCardOpacity");opacity->setRange(0,100);auto *fillLabel=label("Fill","muted");auto *fill=new GradientSlider(navigator);fill->setObjectName("LayerCardFill");fill->setRange(0,100);auto *opacityCell=new QWidget(controlsWidget);auto *opacityLayout=new QHBoxLayout(opacityCell);opacityLayout->setContentsMargins(0,0,0,0);opacityLayout->setSpacing(5);opacityLayout->addWidget(opacityLabel);opacityLayout->addWidget(opacity,1);auto *fillCell=new QWidget(controlsWidget);auto *fillLayout=new QHBoxLayout(fillCell);fillLayout->setContentsMargins(0,0,0,0);fillLayout->setSpacing(5);fillLayout->addWidget(fillLabel);fillLayout->addWidget(fill,1);controls->addWidget(mode,0,0,1,2);controls->addWidget(opacityCell,1,0);controls->addWidget(fillCell,1,1);controls->setColumnStretch(0,1);controls->setColumnStretch(1,1);controlsWidget->show();navLayout->addWidget(controlsWidget);
-        auto *filtersWidget=new QWidget(navigator);filtersWidget->setObjectName("LayerCardFilters");auto *filters=new QHBoxLayout(filtersWidget);filters->setContentsMargins(0,0,0,0);filters->addWidget(label("Filter","muted"));for(const auto &item:QList<QPair<QString,QString>>{{"layer_show.png","Visible"},{"smart object.png","Pixels"},{"horizontal type tool.png","Text"},{"editor_effects.png","Effects"}}){auto *filter=new QToolButton(navigator);filter->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/"+item.first));filter->setIconSize(QSize(18,18));filter->setFixedSize(30,30);filter->setToolTip(item.second+" filter");filter->setCheckable(true);filters->addWidget(filter);}filters->addStretch();filtersWidget->hide();navLayout->addWidget(filtersWidget);
-        auto *directArtboards=new QScrollArea(navigator);directArtboards->setObjectName("LayerCardArtboardRail");directArtboards->setFixedHeight(58);directArtboards->setWidgetResizable(false);directArtboards->setFrameShape(QFrame::NoFrame);directArtboards->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);directArtboards->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *directHost=new QWidget(directArtboards);directHost->setObjectName("LayerCardArtboardHost");auto *directLayout=new QHBoxLayout(directHost);directLayout->setContentsMargins(0,0,0,0);directLayout->setSpacing(8);directArtboards->setWidget(directHost);navLayout->addWidget(directArtboards);
-        auto *stack=new QStackedWidget(navigator);stack->setObjectName("LayerCardStack");for(const QString &name:{QString("Artboard"),QString("Group"),QString("Layer"),QString("Properties")}){auto *page=new QWidget(stack);page->setObjectName("LayerCard"+name);auto *pageLayout=new QVBoxLayout(page);pageLayout->setContentsMargins(0,0,0,0);auto *rail=new QScrollArea(page);rail->setObjectName("LayerCardRail"+name);rail->setWidgetResizable(false);rail->setFrameShape(QFrame::NoFrame);rail->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);rail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *host=new QWidget(rail);host->setObjectName("LayerCardRailHost"+name);auto *hostLayout=new QHBoxLayout(host);hostLayout->setContentsMargins(0,0,0,0);hostLayout->setSpacing(8);rail->setWidget(host);pageLayout->addWidget(rail);stack->addWidget(page);}navLayout->addWidget(stack,1);if(auto *layout=qobject_cast<QVBoxLayout*>(bottomDock->layout()))layout->addWidget(navigator,1);
-        stack->setFixedHeight(64);auto go=[navigator,stack,heading,back](int level){level=qBound(0,level,3);navigator->setProperty("level",level);stack->setCurrentIndex(level);heading->setText(QStringList{"LAYERS","GROUPS","LAYERS","PROPERTIES"}.value(level));back->setVisible(level>0);};connect(back,&QToolButton::clicked,navigator,[navigator,go]{go(navigator->property("level").toInt()-1);});connect(mode,&QComboBox::currentTextChanged,this,[this,navigator](const QString &value){if(currentFile.isEmpty())return;canvasLayers[currentFile].blendMode=value;refresh();});connect(opacity,&QSlider::valueChanged,this,[this,navigator](int value){if(currentFile.isEmpty())return;canvasLayers[currentFile].opacity=value/100.;refresh();});connect(fill,&QSlider::valueChanged,this,[this,navigator](int value){if(currentFile.isEmpty())return;canvasLayers[currentFile].fill=value/100.;refresh();});
-    }
-    if(navigator){
-        layerDrawer->hide();
-        if(artboardRail)artboardRail->hide();
-        if(auto *legacyTitle=bottomDock->findChild<QLabel*>("LayerCardTitle"))legacyTitle->hide();
-        auto *stack=navigator->findChild<QStackedWidget*>("LayerCardStack");auto *heading=navigator->findChild<QLabel*>("LayerCardHeading");auto *back=navigator->findChild<QToolButton*>("LayerCardBack");auto *controls=navigator->findChild<QWidget*>("LayerCardControls");auto *filters=navigator->findChild<QWidget*>("LayerCardFilters");auto *mode=navigator->findChild<QComboBox*>("LayerCardBlendMode");auto *opacity=navigator->findChild<QSlider*>("LayerCardOpacity");auto *fill=navigator->findChild<QSlider*>("LayerCardFill");const int level=qBound(0,navigator->property("level").toInt(),3);if(stack)stack->setCurrentIndex(level);if(heading)heading->setText(QStringList{"LAYERS","GROUPS","LAYERS","PROPERTIES"}.value(level));if(back)back->setVisible(level>0);if(controls)controls->setVisible(level==0||level==3);if(filters)filters->setVisible(level==3);if(canvasLayers.contains(currentFile)){const auto &artboard=canvasLayers[currentFile];QSignalBlocker a(mode),b(opacity),c(fill);if(mode)mode->setCurrentText(artboard.blendMode);if(opacity)opacity->setValue(qRound(artboard.opacity*100));if(fill)fill->setValue(qRound(artboard.fill*100));}
-        auto *directRail=navigator->findChild<QScrollArea*>("LayerCardArtboardRail");auto *directHost=navigator->findChild<QWidget*>("LayerCardArtboardHost");if(directRail&&directHost){directRail->setVisible(level==0);auto *directLayout=qobject_cast<QHBoxLayout*>(directHost->layout());clearLayoutItems(directLayout);const QStringList artboards=batch.files.isEmpty()&& !currentFile.isEmpty()?QStringList{currentFile}:batch.files;for(const QString &source:artboards){auto *entry=new LayerRowButton(inputTitles.value(source,QFileInfo(source).completeBaseName()),{},directHost);entry->setObjectName("LayerCardEntry");entry->setProperty("hierarchy","artboard");entry->setToolButtonStyle(Qt::ToolButtonTextOnly);entry->setMinimumWidth(178);entry->setCheckable(true);entry->setChecked(source==currentFile);entry->setToolTip("Artboard · click to select, double-click to open groups");directLayout->addWidget(entry);connect(entry,&QToolButton::clicked,this,[this,source]{selectFile(source);});entry->doubleClick=[navigator,stack,heading]{navigator->setProperty("level",1);if(stack)stack->setCurrentIndex(1);if(heading)heading->setText("GROUPS");};}directLayout->addStretch();directHost->adjustSize();directHost->setMinimumWidth(qMax(directRail->viewport()->width(),directHost->sizeHint().width()));}
-        if(stack)stack->setVisible(level>0);const QString pageName=QStringList{"Artboard","Group","Layer","Properties"}.value(level);auto *host=navigator->findChild<QWidget*>("LayerCardRailHost"+pageName);if(host){auto *hostLayout=qobject_cast<QHBoxLayout*>(host->layout());clearLayoutItems(hostLayout);auto makeEntry=[this,navigator,stack,heading,host,level](const QString &text,int next,int track,const QString &source){auto *entry=new LayerRowButton(text,{},host);entry->setObjectName("LayerCardEntry");entry->setProperty("hierarchy",QStringList{"artboard","group","layer","properties"}.value(level));entry->setMinimumWidth(178);entry->setToolButtonStyle(Qt::ToolButtonTextOnly);entry->setContextMenuPolicy(Qt::CustomContextMenu);entry->setCheckable(true);entry->setChecked((!source.isEmpty()&&source==currentFile)||(track>=0&&trackList&&trackList->currentRow()==track));host->layout()->addWidget(entry);auto open=[navigator,stack,heading,next,track]{navigator->setProperty("level",next);if(stack)stack->setCurrentIndex(next);if(heading)heading->setText(QStringList{"LAYERS","GROUPS","LAYERS","PROPERTIES"}.value(next));navigator->setProperty("track",track);};connect(entry,&QToolButton::clicked,this,[this,source,track,text]{if(!source.isEmpty()){selectFile(source);status->setText("Artboard selected · "+text);}else if(track>=0&&trackList){trackList->setCurrentRow(track);status->setText("Layer selected · "+text);}else status->setText("Group selected · "+text);});entry->doubleClick=[open]{open();};connect(entry,&QWidget::customContextMenuRequested,this,[navigator,stack,heading,track](const QPoint &){navigator->setProperty("level",3);navigator->setProperty("track",track);if(stack)stack->setCurrentIndex(3);if(heading)heading->setText("PROPERTIES");});};
-            if(level==0){if(batch.files.isEmpty()&&!currentFile.isEmpty())makeEntry(inputTitles.value(currentFile,QFileInfo(currentFile).completeBaseName()),1,-1,currentFile);for(const auto &path:batch.files)makeEntry(inputTitles.value(path,QFileInfo(path).completeBaseName()),1,-1,path);}
-            else if(level==1){makeEntry("Default Group",2,-1,{});if(std::any_of(timelineTracks.cbegin(),timelineTracks.cend(),[](const TimelineTrack &track){return track.type==TimelineTrack::Text;}))makeEntry("Text Group",2,-1,{});}
-            else if(level==2){makeEntry("Source layer · "+inputTitles.value(currentFile,QFileInfo(currentFile).completeBaseName()),3,-1,{});for(int i=0;i<timelineTracks.size();++i)makeEntry((timelineTracks[i].type==TimelineTrack::Text?"Text · ":"Layer · ")+timelineTracks[i].name,3,i,{});}
-            else {const int track=navigator->property("track").toInt();auto *properties=new QWidget(host);auto *propertiesLayout=new QHBoxLayout(properties);propertiesLayout->setContentsMargins(6,4,6,4);propertiesLayout->addWidget(label(track>=0&&track<timelineTracks.size()?timelineTracks[track].name:"Artboard properties"));auto *fx=new QPushButton("Effects…",properties);propertiesLayout->addWidget(fx);connect(fx,&QPushButton::clicked,this,[this,track]{if(track>=0&&track<timelineTracks.size()){trackList->setCurrentRow(track);tabs->setCurrentIndex(4);tabs->show();}});hostLayout->addWidget(properties);}
-            if(level==0&&hostLayout->count()==0)makeEntry(currentFile.isEmpty()?"Artboard 1":inputTitles.value(currentFile,QFileInfo(currentFile).completeBaseName()),1,-1,currentFile);
-            hostLayout->addStretch();host->show();host->adjustSize();if(auto *rail=qobject_cast<QScrollArea*>(host->parentWidget())){rail->setMinimumHeight(60);rail->show();host->setMinimumWidth(qMax(rail->viewport()->width(),host->sizeHint().width()));}
-        }
-    }
-    if(navigator){if(auto *controls=navigator->findChild<QWidget*>("LayerCardControls"))controls->setFixedHeight(62);if(auto *directRail=navigator->findChild<QScrollArea*>("LayerCardArtboardRail")){if(auto *layout=qobject_cast<QVBoxLayout*>(navigator->layout()))layout->removeWidget(directRail);directRail->setParent(navigator);directRail->setFixedHeight(58);QTimer::singleShot(0,navigator,[navigator,directRail]{directRail->setGeometry(0,qMax(0,navigator->height()-62),navigator->width(),58);directRail->show();directRail->raise();});}}
-    // Once detached from the old navigator layout, populate the visible
-    // artboard rail directly from the current document every time media loads.
-    if(bottomDock){
-        auto *rail=bottomDock->findChild<QScrollArea*>("LayerCardArtboardRail");
-        auto *host=bottomDock->findChild<QWidget*>("LayerCardArtboardHost");
-        if(rail&&host){
-            auto *railLayout=qobject_cast<QHBoxLayout*>(host->layout());
-            clearLayoutItems(railLayout);
-            QStringList boards=batch.files;
-            if(boards.isEmpty()&&!currentFile.isEmpty()) boards<<currentFile;
-            for(const QString &source:boards){
-                const QString title=inputTitles.value(source,QFileInfo(source).completeBaseName());
-                auto *entry=new LayerRowButton(title,{},host);
-                entry->setObjectName("LayerCardEntry");
-                entry->setToolButtonStyle(Qt::ToolButtonTextOnly);
-                entry->setMinimumWidth(178);
-                entry->setCheckable(true);
-                entry->setChecked(source==currentFile);
-                entry->setToolTip("Artboard · click to select");
-                railLayout->addWidget(entry);
-                connect(entry,&QToolButton::clicked,this,[this,source]{selectFile(source);});
-            }
-            railLayout->addStretch();
-            host->adjustSize();
-            host->setMinimumWidth(qMax(rail->viewport()->width(),host->sizeHint().width()));
-            rail->show();
-            rail->raise();
-        }
-    }
-    if(bottomDock){
-        auto *surfaceRail=bottomDock->findChild<QScrollArea*>("LayerCardSurfaceRail");
-        auto *surfaceHost=bottomDock->findChild<QWidget*>("LayerCardSurfaceHost");
-        if(surfaceRail&&surfaceHost){
-            auto *surfaceLayout=qobject_cast<QHBoxLayout*>(surfaceHost->layout());
-            clearLayoutItems(surfaceLayout);
-            QStringList boards=batch.files;
-            if(boards.isEmpty()&&!currentFile.isEmpty()) boards<<currentFile;
-            for(const QString &source:boards){
-                auto *entry=new LayerRowButton(inputTitles.value(source,QFileInfo(source).completeBaseName()),{},surfaceHost);
-                entry->setObjectName("LayerCardSurfaceEntry");entry->setToolButtonStyle(Qt::ToolButtonTextOnly);entry->setMinimumWidth(178);entry->setCheckable(true);entry->setChecked(source==currentFile);entry->setToolTip("Artboard · click to select");surfaceLayout->addWidget(entry);
-                connect(entry,&QToolButton::clicked,this,[this,source]{selectFile(source);});
-            }
-            surfaceLayout->addStretch();surfaceHost->adjustSize();surfaceHost->setMinimumWidth(qMax(surfaceRail->viewport()->width(),surfaceHost->sizeHint().width()));surfaceRail->show();surfaceRail->raise();
-        }
-        if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){if(surfaceRail)surfaceRail->setVisible(surface->property("layerExpanded").toBool());
-            auto *active=surface->findChild<QToolButton*>("LayerCardActiveArtboard");
-            if(!active){active=new LayerRowButton({}, {}, surface);active->setObjectName("LayerCardActiveArtboard");active->setToolButtonStyle(Qt::ToolButtonTextOnly);active->setCheckable(true);active->setToolTip("Active artboard · click to select");connect(active,&QToolButton::clicked,this,[this]{if(!currentFile.isEmpty())selectFile(currentFile);});}
-            active->setText(currentFile.isEmpty()?"Artboard 1":inputTitles.value(currentFile,QFileInfo(currentFile).completeBaseName()));active->setChecked(true);active->setGeometry(0,254,qMin(240,surface->width()),56);active->setVisible(surface->property("layerExpanded").toBool());active->raise();
-        }
-        if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){auto *add=surface->findChild<QToolButton*>("LayerCardNewArtboard");if(!add){add=new QToolButton(surface);add->setObjectName("LayerCardNewArtboard");add->setText("+ New Artboard");add->setToolButtonStyle(Qt::ToolButtonTextOnly);add->setToolTip("Create a transparent artboard at the active canvas dimensions");add->setStyleSheet("QToolButton{background:#101014;border:1px solid #32323a;border-radius:12px;color:#fff;padding:7px 12px;text-align:left;} QToolButton:hover{border-color:#7a4dff;}");connect(add,&QToolButton::clicked,this,[this]{const QSize size(qMax(1,widthInput->value()),qMax(1,heightInput->value()));QDir directory(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));directory.mkpath("artboards");const QString path=directory.filePath("artboards/artboard_"+QDateTime::currentDateTimeUtc().toString("yyyyMMddhhmmsszzz")+".png");QImage blank(size,QImage::Format_ARGB32);blank.fill(Qt::transparent);if(!blank.save(path,"PNG")){showError("Could not create the new artboard.");return;}const QString name="Artboard "+QString::number(batch.files.size()+1);batch.add({path});inputTitles[path]=name;CanvasLayer layer;layer.source=path;layer.name=name;layer.nativeSize=size;canvasLayers[path]=layer;updateBatchLabel();selectFile(path);});}add->setGeometry(248,254,qMin(180,qMax(110,surface->width()-248)),56);add->setVisible(surface->property("layerExpanded").toBool());add->raise();}
-        if(auto *toggle=bottomDock->findChild<QToolButton*>("LayerCardToggle")){const QString board=currentFile.isEmpty()?"Artboard 1":inputTitles.value(currentFile,canvasLayers.value(currentFile).name.isEmpty()?QString("Artboard 1"):canvasLayers.value(currentFile).name);toggle->setText("LAYERS · "+board);toggle->setToolTip("Layers for "+board+" · click to expand");toggle->show();}
-        if(auto *mode=bottomDock->findChild<QComboBox*>("LayerCardSurfaceBlend"))if(canvasLayers.contains(currentFile)){QSignalBlocker block(mode);mode->setCurrentText(canvasLayers[currentFile].blendMode);}
-        if(auto *opacity=bottomDock->findChild<QSlider*>("LayerCardSurfaceOpacity"))if(canvasLayers.contains(currentFile)){QSignalBlocker block(opacity);opacity->setValue(qRound(canvasLayers[currentFile].opacity*100));}
-        if(auto *fill=bottomDock->findChild<QSlider*>("LayerCardSurfaceFill"))if(canvasLayers.contains(currentFile)){QSignalBlocker block(fill);fill->setValue(qRound(canvasLayers[currentFile].fill*100));}
-    }
-    if(batchNavigator){QSignalBlocker block(batchNavigator);batchNavigator->setRange(0,qMax(0,batch.files.size()-1));batchNavigator->setValue(qMax(0,batch.files.indexOf(currentFile)));}
-    QSignalBlocker blocker(layerDrawer);
-    layerDrawer->clear();
-    const QString root="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";
-    const QIcon eye=whiteIcon(root+"layer_show.png"),hiddenEye=whiteIcon(root+"layer_don't show.png"),artboardIcon=whiteIcon(root+"artboard tool.png"),groupIcon=whiteIcon(root+"shape layer.png"),sourceIcon=whiteIcon(root+"smart object.png"),imageIcon=whiteIcon(root+"frame tool.png"),textIcon=whiteIcon(root+"horizontal type tool.png"),videoIcon=whiteIcon(root+"video.png"),audioIcon=whiteIcon(root+"playback_audio levels.png"),effectIcon=whiteIcon(root+"editor_effects.png");
-    if(artboardRailContent){
-        auto *railLayout=qobject_cast<QHBoxLayout*>(artboardRailContent->layout());
-        while(railLayout&&railLayout->count()){auto *item=railLayout->takeAt(0);if(item->widget())item->widget()->deleteLater();delete item;}
-        for(const QString &path:batch.files){
-            const QString artboardName=inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());
-            QImage image=path==currentFile?original:QImage(path);
-            auto *artboardButton=new QToolButton(artboardRailContent);
-            artboardButton->setObjectName("ArtboardRailButton");artboardButton->setText(artboardName);artboardButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);artboardButton->setCheckable(true);artboardButton->setChecked(path==currentFile);artboardButton->setFixedSize(172,58);
-            artboardButton->setIcon(image.isNull()?artboardIcon:QIcon(QPixmap::fromImage(image.scaled(QSize(42,42),Qt::KeepAspectRatio,Qt::SmoothTransformation))));
-            artboardButton->setIconSize(QSize(42,42));artboardButton->setToolTip("Open artboard · "+artboardName);railLayout->addWidget(artboardButton);
-            connect(artboardButton,&QToolButton::clicked,this,[this,path]{if(path!=currentFile)selectFile(path);});
-        }
-        if(batch.files.size()==1){
-            auto *newArtboard=new QToolButton(artboardRailContent);
-            newArtboard->setObjectName("ArtboardRailButton");newArtboard->setText("+ New Artboard");newArtboard->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);newArtboard->setIcon(artboardIcon);newArtboard->setIconSize(QSize(24,24));newArtboard->setFixedSize(172,58);newArtboard->setToolTip("Create a new transparent artboard at the active canvas dimensions.");railLayout->addWidget(newArtboard);
-            connect(newArtboard,&QToolButton::clicked,this,[this]{const QSize size(qMax(1,widthInput->value()),qMax(1,heightInput->value()));QDir directory(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation));directory.mkpath("artboards");const QString path=directory.filePath("artboards/artboard_"+QDateTime::currentDateTimeUtc().toString("yyyyMMddhhmmsszzz")+".png");QImage blank(size,QImage::Format_ARGB32);blank.fill(Qt::transparent);if(!blank.save(path,"PNG")){showError("Could not create the new artboard.");return;}const QString name="Artboard "+QString::number(batch.files.size()+1);batch.add({path});inputTitles[path]=name;CanvasLayer layer;layer.source=path;layer.name=name;layer.nativeSize=size;canvasLayers[path]=layer;updateBatchLabel();selectFile(path);});
-        }
-        railLayout->addStretch();
-    }
-    auto install=[this,eye,hiddenEye](QTreeWidgetItem *item,const QString &text,const QIcon &icon,bool visible,std::function<void(bool)> setVisible){
-        item->setText(0,text);item->setSizeHint(0,QSize(0,52));
-        auto *row=new LayerRowWidget(text,eye,icon,layerDrawer);
-        row->eyeButton->setChecked(visible);
-        row->actionButton->setToolTip(item->toolTip(0));
-        row->actionButton->doubleClick=[item]{if(item->childCount())item->setExpanded(!item->isExpanded());};
-        layerDrawer->setItemWidget(item,0,row);
-        connect(row->eyeButton,&QToolButton::toggled,this,[setVisible,row,eye,hiddenEye](bool on){row->eyeButton->setIcon(on?eye:hiddenEye);setVisible(on);});
-        connect(row->actionButton,&QToolButton::clicked,this,[this,item]{layerDrawer->setCurrentItem(item);const int track=item->data(0,Qt::UserRole+1).toInt();if(track>=0&&track<timelineTracks.size()&&trackList)trackList->setCurrentRow(track);});
-        row->actionButton->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(row->actionButton,&QWidget::customContextMenuRequested,this,[this,item,row](const QPoint &point){QMenu menu(this);auto *settings=menu.addAction("Layer settings");auto *properties=menu.addAction("Properties");auto *choice=menu.exec(row->actionButton->mapToGlobal(point));const int track=item->data(0,Qt::UserRole+1).toInt();if(choice==settings&&track>=0&&track<timelineTracks.size()&&trackList){trackList->setCurrentRow(track);status->setText("Layer settings · "+timelineTracks[track].name);}if(choice==properties){QDialog dialog(this);dialog.setWindowTitle("Layer properties");auto *v=new QVBoxLayout(&dialog);v->addWidget(label(item->text(0)));v->addWidget(label(item->toolTip(0),"muted"));auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();}});
-    };
-    for(const QString &path:batch.files){
-        if(path!=currentFile)continue;
-        auto *artboard=new QTreeWidgetItem(layerDrawer);
-        artboard->setToolTip(0,path);artboard->setData(0,Qt::UserRole,path);
-        const bool visible=canvasLayers.value(path).visible;
-        const QString artboardName=inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());
-        install(artboard,"Artboard · "+artboardName,artboardIcon,visible,[this,path](bool on){canvasLayers[path].visible=on;refresh();});
-        auto *baseGroup=new QTreeWidgetItem(artboard);baseGroup->setToolTip(0,"Canvas group");install(baseGroup,"Group · Canvas",groupIcon,visible,[](bool){});
-        auto *baseLayer=new QTreeWidgetItem(baseGroup);baseLayer->setToolTip(0,"Source layer");install(baseLayer,"Layer · "+QFileInfo(path).completeBaseName(),sourceIcon,visible,[this,path](bool on){canvasLayers[path].visible=on;refresh();});
-        if(path!=currentFile)continue;
-        QMap<int,QTreeWidgetItem*> groups;
-        auto groupFor=[&](int type){if(groups.contains(type))return groups[type];const QString name=type==TimelineTrack::Video?"Group · Video":type==TimelineTrack::Audio?"Group · Audio":type==TimelineTrack::Image?"Group · Images":type==TimelineTrack::Text?"Group · Text":"Group · Effects";auto *group=new QTreeWidgetItem(artboard);group->setToolTip(0,name);install(group,name,groupIcon,true,[this,type](bool on){for(auto &track:timelineTracks)if(int(track.type)==type)track.enabled=on;refresh();updateTrackPanel();});groups[type]=group;return group;};
-        for(int index=0;index<timelineTracks.size();++index){const auto &track=timelineTracks[index];auto *layer=new QTreeWidgetItem(groupFor(int(track.type)));layer->setToolTip(0,track.source);layer->setData(0,Qt::UserRole+1,index);const QString type=track.type==TimelineTrack::Text?"Text":track.type==TimelineTrack::Image?"Image":track.type==TimelineTrack::Video?"Video":track.type==TimelineTrack::Audio?"Audio":"Effect";const QIcon kind=track.type==TimelineTrack::Text?textIcon:track.type==TimelineTrack::Image?imageIcon:track.type==TimelineTrack::Video?videoIcon:track.type==TimelineTrack::Audio?audioIcon:effectIcon;install(layer,type+" · "+track.name,kind,track.enabled,[this,index](bool on){if(index>=0&&index<timelineTracks.size()){timelineTracks[index].enabled=on;refresh();updateTrackPanel();}});}
-    }
-    if(!modelAsset.sourcePath.isEmpty()&&!modelAsset.textures.isEmpty()){
-        auto *model=new QTreeWidgetItem(layerDrawer);model->setToolTip(0,"Imported model material texture layers");install(model,"3D Model · "+QFileInfo(modelAsset.sourcePath).fileName(),sourceIcon,true,[](bool){});
-        for(int index=0;index<modelAsset.textures.size();++index){const auto &texture=modelAsset.textures[index];auto *layer=new QTreeWidgetItem(model);layer->setToolTip(0,texture.path);install(layer,"Layer · "+texture.material+" · "+texture.slot,imageIcon,true,[this,index](bool on){if(index==modelTextureList->currentRow()&&!on){preview->clearTextureFrame();preview->setTextureSphereInteractive(false);}else if(on&&index==modelTextureList->currentRow())refreshTexturePreview();});}
-    }
-    layerDrawer->collapseAll();
-    // The old rail/tree still maintains the document model, but never
-    // participates in the visible dock after it has been rebuilt.
-    layerDrawer->hide();
-    if(artboardRail)artboardRail->hide();
-    if(auto *legacyTitle=bottomDock->findChild<QLabel*>("LayerCardTitle"))legacyTitle->hide();
-    if(auto *visibleCard=bottomDock->findChild<QWidget*>("LayerCardNavigator")){visibleCard->show();visibleCard->raise();}
-    if(auto *dockLayout=qobject_cast<QVBoxLayout*>(bottomDock->layout())){
-        if(layerDrawer&&layerDrawer->parentWidget()==bottomDock){dockLayout->removeWidget(layerDrawer);layerDrawer->setParent(nullptr);}
-        if(artboardRail&&artboardRail->parentWidget()==bottomDock){dockLayout->removeWidget(artboardRail);artboardRail->setParent(nullptr);}
-    }
-    if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){surface->setGeometry(0,0,bottomDock->width(),bottomDock->height());surface->show();surface->raise();}
-    }
-    return;
-    if(!layerDrawer)return;QSignalBlocker blocker(layerDrawer);layerDrawer->clear();const QString root="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";const QIcon eye=whiteIcon(root+"red eye tool.png"),artboardIcon=whiteIcon(root+"artboard tool.png"),groupIcon=whiteIcon(root+"shape layer.png"),sourceIcon=whiteIcon(root+"smart object.png"),imageIcon=whiteIcon(root+"frame tool.png"),textIcon=whiteIcon(root+"horizontal type tool.png"),videoIcon=whiteIcon(root+"video.png"),audioIcon=whiteIcon(root+"playback_speaker max.png"),effectIcon=whiteIcon(root+"editor_glow.png"),moreIcon=whiteIcon(root+"panel settings.png");
-    auto install=[this,eye](QTreeWidgetItem *item,const QString &text,const QIcon &icon,bool visible,std::function<void(bool)> setVisible){item->setText(0,text);item->setSizeHint(0,QSize(0,38));auto *row=new LayerRowWidget(text,eye,icon,layerDrawer);row->eyeButton->setChecked(visible);layerDrawer->setItemWidget(item,0,row);connect(row->eyeButton,&QToolButton::toggled,this,[setVisible](bool on){setVisible(on);});connect(row->actionButton,&QToolButton::clicked,this,[this,item]{layerDrawer->setCurrentItem(item);if(item->childCount())item->setExpanded(!item->isExpanded());const int track=item->data(0,Qt::UserRole+1).toInt();if(track>=0&&track<timelineTracks.size()&&trackList)trackList->setCurrentRow(track);});row->actionButton->setContextMenuPolicy(Qt::CustomContextMenu);connect(row->actionButton,&QWidget::customContextMenuRequested,this,[this,item,row](const QPoint &point){QMenu menu(this);auto *settings=menu.addAction("Layer settings");auto *properties=menu.addAction("Properties");auto *choice=menu.exec(row->actionButton->mapToGlobal(point));const int track=item->data(0,Qt::UserRole+1).toInt();if(choice==settings&&track>=0&&track<timelineTracks.size()&&trackList){trackList->setCurrentRow(track);status->setText("Layer settings · "+timelineTracks[track].name);}if(choice==properties){QDialog dialog(this);dialog.setWindowTitle("Layer properties");auto *v=new QVBoxLayout(&dialog);v->addWidget(label(item->text(0)));v->addWidget(label(item->toolTip(0),"muted"));auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();}});};
-    QTreeWidgetItem *more=nullptr;for(int artboardIndex=0;artboardIndex<batch.files.size();++artboardIndex){const QString path=batch.files[artboardIndex];QTreeWidgetItem *parent=nullptr;if(artboardIndex>=5){if(!more){more=new QTreeWidgetItem(layerDrawer);more->setToolTip(0,"Additional artboards");install(more,"More artboards",moreIcon,true,[](bool){});}parent=more;}auto *artboard=parent?new QTreeWidgetItem(parent):new QTreeWidgetItem(layerDrawer);artboard->setToolTip(0,path);artboard->setData(0,Qt::UserRole,path);const bool artboardVisible=canvasLayers.value(path).visible;install(artboard,inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName()),artboardIcon,artboardVisible,[this,path](bool on){canvasLayers[path].visible=on;refresh();});auto *baseGroup=new QTreeWidgetItem(artboard);baseGroup->setToolTip(0,"Canvas group");install(baseGroup,"Group · Canvas",groupIcon,artboardVisible,[](bool){});auto *base=new QTreeWidgetItem(baseGroup);base->setToolTip(0,"Source layer");install(base,"Layer · "+QFileInfo(path).completeBaseName(),sourceIcon,artboardVisible,[this,path](bool on){canvasLayers[path].visible=on;refresh();});if(path!=currentFile)continue;QMap<int,QTreeWidgetItem*> groups;auto groupFor=[&](int type){if(groups.contains(type))return groups[type];QString title=type==TimelineTrack::Video?"Group · Video":type==TimelineTrack::Audio?"Group · Audio":type==TimelineTrack::Image?"Group · Images":type==TimelineTrack::Text?"Group · Text":"Group · Effects";auto *group=new QTreeWidgetItem(artboard);group->setToolTip(0,title);install(group,title,groupIcon,true,[this,type](bool on){for(auto &track:timelineTracks)if(int(track.type)==type)track.enabled=on;refresh();updateTrackPanel();});groups[type]=group;return group;};for(int i=0;i<timelineTracks.size();++i){const auto &track=timelineTracks[i];auto *group=groupFor(int(track.type));auto *layer=new QTreeWidgetItem(group);layer->setToolTip(0,track.source);layer->setData(0,Qt::UserRole+1,i);const QString type=track.type==TimelineTrack::Text?"Text":track.type==TimelineTrack::Image?"Image":track.type==TimelineTrack::Video?"Video":track.type==TimelineTrack::Audio?"Audio":"Effect";const QIcon kind=track.type==TimelineTrack::Text?textIcon:track.type==TimelineTrack::Image?imageIcon:track.type==TimelineTrack::Video?videoIcon:track.type==TimelineTrack::Audio?audioIcon:effectIcon;install(layer,type+" · "+track.name,kind,track.enabled,[this,i](bool on){if(i>=0&&i<timelineTracks.size()){timelineTracks[i].enabled=on;refresh();updateTrackPanel();}});}}
-    if(!modelAsset.sourcePath.isEmpty()&&!modelAsset.textures.isEmpty()){
-        auto *modelRoot=new QTreeWidgetItem(layerDrawer);modelRoot->setText(0,"3D Model · "+QFileInfo(modelAsset.sourcePath).fileName());modelRoot->setExpanded(true);modelRoot->setToolTip(0,"Imported model material texture layers");modelRoot->setSizeHint(0,QSize(0,38));
-        auto *rootRow=new LayerRowWidget(modelRoot->text(0),eye,sourceIcon,layerDrawer);layerDrawer->setItemWidget(modelRoot,0,rootRow);
-        for(int index=0;index<modelAsset.textures.size();++index){const auto &texture=modelAsset.textures[index];auto *item=new QTreeWidgetItem(modelRoot);item->setText(0,texture.material+" · "+texture.slot);item->setToolTip(0,texture.path);item->setSizeHint(0,QSize(0,38));auto *row=new LayerRowWidget(item->text(0),eye,imageIcon,layerDrawer);row->actionButton->setToolTip("Open this material texture in the live UV mesh preview");layerDrawer->setItemWidget(item,0,row);connect(row->actionButton,&QToolButton::clicked,this,[this,index]{if(modelTextureList)modelTextureList->setCurrentRow(index);});connect(row->eyeButton,&QToolButton::toggled,this,[this,index](bool on){if(index==modelTextureList->currentRow()&&!on){preview->clearTextureFrame();preview->setTextureSphereInteractive(false);}else if(on&&index==modelTextureList->currentRow())refreshTexturePreview();});}
-    }
+    // Layer panel UI intentionally removed; canvasLayers and timelineTracks remain the document model.
 }
 void MainWindow::updateBatchLabel(){
     qint64 sourceBytes=0;for(const auto &path:batch.files)sourceBytes+=QFileInfo(path).size();int formats=0;for(auto it=imageFormats.cbegin();it!=imageFormats.cend();++it)if(it.value()->isChecked())++formats;for(auto it=videoFormats.cbegin();it!=videoFormats.cend();++it)if(it.value()->isChecked())++formats;double estimate=sourceBytes*(formats?qMax(.1,formats*(quality?quality->value()/100.:.9)):1.);auto formatBytes=[](double bytes){return bytes<1024*1024?QString::number(qRound(bytes/1024))+" KB":QString::number(bytes/(1024*1024),'f',1)+" MB";};batchLabel->setText(QString("%1 selected · source %2 · estimated export %3").arg(batch.files.size()).arg(formatBytes(sourceBytes)).arg(formatBytes(estimate)));batchLabel->setToolTip("Estimate uses selected formats and quality. Actual video and compressed-image output can vary.");QSignalBlocker block(navigation);navigation->clear();for(const auto &path:batch.files)navigation->addItem(inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName()),path);navigation->setCurrentIndex(batch.files.indexOf(currentFile));navLabel->setText(QString("%1 / %2").arg(qMax(0,batch.files.indexOf(currentFile)+1)).arg(batch.files.size()));updateLayerDrawer();
@@ -1819,9 +1166,6 @@ void MainWindow::keyPressEvent(QKeyEvent *event){
     AspectraWindow::keyPressEvent(event);
 }
 bool MainWindow::eventFilter(QObject *watched,QEvent *event){
-    if(watched&&watched->objectName()=="shell"&&event->type()==QEvent::Resize&&bottomDock&&bottomDock->property("absoluteDock").toBool()){
-        auto *shell=qobject_cast<QWidget*>(watched);const int side=16;if(shell){const bool expanded=bottomDock->findChild<QWidget*>("LayerCardSurface")&&bottomDock->findChild<QWidget*>("LayerCardSurface")->property("layerExpanded").toBool();const int dockHeight=qMax(190,qRound(shell->height()*(expanded?.65:.35)));bottomDock->setFixedHeight(dockHeight);if(auto *outer=qobject_cast<QVBoxLayout*>(shell->layout()))outer->setContentsMargins(16,12,16,dockHeight+12);bottomDock->setGeometry(side,qMax(0,shell->height()-dockHeight),qMax(1,shell->width()-side*2),dockHeight);if(auto *surface=bottomDock->findChild<QWidget*>("LayerCardSurface")){surface->setGeometry(0,0,bottomDock->width(),bottomDock->height());surface->raise();}bottomDock->raise();if(auto *rail=shell->findChild<QScrollArea*>("ArtboardRail")){rail->setGeometry(16,qMax(0,shell->height()-127),qMax(1,shell->width()-32),81);if(auto *content=rail->widget())content->setMinimumWidth(qMax(520,rail->viewport()->width()));rail->show();rail->raise();}if(auto *actions=shell->findChild<QWidget*>("LayerCardArtboardActions")){actions->setGeometry(16,qMax(0,shell->height()-40),qMax(1,shell->width()-32),34);actions->show();actions->raise();}}
-    }
     // Focus canvas owns every wheel event that reaches a rail or the empty
     // shell, so zoom-out cannot be trapped by a transparent overlay.
     const bool focusCanvas=preview&&preview->parentWidget()&&preview->parentWidget()->objectName()=="shell";
@@ -1844,10 +1188,6 @@ bool MainWindow::eventFilter(QObject *watched,QEvent *event){
             return true;
         }
     }
-    auto *artboardCard=qobject_cast<QToolButton*>(watched);const bool isArtboardCard=artboardCard&&(artboardCard->objectName()=="LayerCardSurfaceEntry"||artboardCard->objectName()=="ArtboardRailExtra");
-    if(isArtboardCard&&event->type()==QEvent::MouseButtonPress){auto *mouse=static_cast<QMouseEvent*>(event);if(mouse->button()==Qt::LeftButton){setProperty("artboardReorderSource",artboardCard->property("artboardSource"));setProperty("artboardReorderActive",false);}}
-    if(isArtboardCard&&event->type()==QEvent::MouseMove){auto *mouse=static_cast<QMouseEvent*>(event);const QString source=property("artboardReorderSource").toString();if((mouse->buttons()&Qt::LeftButton)&&!source.isEmpty()&&batch.files.contains(source)){QWidget *under=QApplication::widgetAt(mouse->globalPosition().toPoint());QToolButton *target=nullptr;for(QWidget *candidate=under;candidate&&!target;candidate=candidate->parentWidget()){auto *button=qobject_cast<QToolButton*>(candidate);if(button&&(button->objectName()=="LayerCardSurfaceEntry"||button->objectName()=="ArtboardRailExtra"))target=button;}const QString destination=target?target->property("artboardSource").toString():QString{};if(!destination.isEmpty()&&destination!=source&&batch.files.contains(destination)){const int from=batch.files.indexOf(source),to=batch.files.indexOf(destination);if(from>=0&&to>=0){batch.files.move(from,to);setProperty("artboardReorderActive",true);updateBatchLabel();status->setText("Artboards reordered");}}if(property("artboardReorderActive").toBool())return true;}}
-    if(isArtboardCard&&event->type()==QEvent::MouseButtonRelease&&property("artboardReorderActive").toBool()){setProperty("artboardReorderActive",false);return true;}
     QScrollArea *subRail=inputRail;if(subRail&&(subRail->objectName()=="SubSettingsRail"||subRail->objectName()=="ArtboardRail"||subRail->objectName()=="BottomToolbarRail"||subRail->objectName()=="BottomModeRail")){auto *bar=subRail->horizontalScrollBar();if(event->type()==QEvent::Wheel){auto *wheel=static_cast<QWheelEvent*>(event);const int amount=wheel->angleDelta().x()!=0?wheel->angleDelta().x():wheel->angleDelta().y();bar->setValue(qBound(0,bar->value()-amount,bar->maximum()));return true;}if(event->type()==QEvent::MouseButtonPress){auto *mouse=static_cast<QMouseEvent*>(event);if(mouse->button()==Qt::LeftButton){watched->setProperty("subRailDragStart",mouse->position().toPoint());watched->setProperty("subRailScrollStart",bar->value());watched->setProperty("subRailDragging",false);}}if(event->type()==QEvent::MouseMove){auto *mouse=static_cast<QMouseEvent*>(event);if(mouse->buttons()&Qt::LeftButton){const int delta=mouse->position().toPoint().x()-watched->property("subRailDragStart").toPoint().x();if(qAbs(delta)>=4){watched->setProperty("subRailDragging",true);bar->setValue(qBound(0,watched->property("subRailScrollStart").toInt()-delta,bar->maximum()));return true;}}}if(event->type()==QEvent::MouseButtonRelease&&watched->property("subRailDragging").toBool())return true;}
     QScrollArea *mainToolRail=nullptr;for(QObject *ancestor=watched;ancestor&&!mainToolRail;ancestor=ancestor->parent())mainToolRail=qobject_cast<QScrollArea*>(ancestor);if(mainToolRail&&mainToolRail->objectName()=="MainToolRail"){auto *bar=mainToolRail->horizontalScrollBar();if(event->type()==QEvent::Wheel){auto *wheel=static_cast<QWheelEvent*>(event);const int amount=wheel->angleDelta().x()!=0?wheel->angleDelta().x():wheel->angleDelta().y();bar->setValue(qBound(0,bar->value()-amount,bar->maximum()));return true;}if(event->type()==QEvent::MouseButtonPress){auto *mouse=static_cast<QMouseEvent*>(event);if(mouse->button()==Qt::LeftButton){watched->setProperty("toolRailDragStart",mouse->position().toPoint());watched->setProperty("toolRailScrollStart",bar->value());watched->setProperty("toolRailDragging",false);}}if(event->type()==QEvent::MouseMove){auto *mouse=static_cast<QMouseEvent*>(event);if(mouse->buttons()&Qt::LeftButton){const int delta=mouse->position().toPoint().x()-watched->property("toolRailDragStart").toPoint().x();if(qAbs(delta)>=4){watched->setProperty("toolRailDragging",true);bar->setValue(qBound(0,watched->property("toolRailScrollStart").toInt()-delta,bar->maximum()));return true;}}}if(event->type()==QEvent::MouseButtonRelease&&watched->property("toolRailDragging").toBool())return true;}
     auto *tool=qobject_cast<QToolButton*>(watched);const bool carouselSurface=tabCarousel&&(watched==tabCarousel->viewport()||(tool&&tool->objectName()=="CarouselTab"));

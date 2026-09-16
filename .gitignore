@@ -1,2 +1,5 @@
 # This repository is an intentionally complete Aspectra workspace mirror.
 # Git itself always excludes its own .git metadata directory.
+
+# Google Drive's transient upload chunks are not Aspectra project files.
+.tmp.driveupload/

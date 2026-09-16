@@ -36,6 +36,25 @@ private:
     int minimum=0,maximum=100,value=0;
 };
 QIcon settingIcon(const QString &name);
+class CanvasAspectPreview final : public QWidget {
+public:
+    CanvasAspectPreview(QSpinBox *width,QSpinBox *height,QWidget *parent=nullptr):QWidget(parent),m_width(width),m_height(height){setMinimumSize(300,250);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
+    void setAspectRatio(qreal ratio){m_aspectRatio=qMax<qreal>(.01,ratio);update();}
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF area=rect().adjusted(18,16,-18,-16);
+        const qreal width=qMax(1,m_width?m_width->value():1),height=qMax(1,m_height?m_height->value():1);
+        const qreal factor=qMin(area.width()/m_aspectRatio,area.height());
+        const QSizeF size(m_aspectRatio*factor,factor);
+        const QRectF canvas(area.center().x()-size.width()/2,area.center().y()-size.height()/2,size.width(),size.height());
+        painter.setPen(QPen(QColor("#7a4dff"),2));painter.setBrush(QColor(122,77,255,35));painter.drawRoundedRect(canvas,8,8);
+        painter.setPen(QColor(221,211,255,205));painter.setFont(QFont("Segoe UI",9,QFont::DemiBold));painter.drawText(canvas,Qt::AlignCenter,QString("%1 × %2").arg(qRound(width)).arg(qRound(height)));
+    }
+private:
+    QPointer<QSpinBox> m_width,m_height;
+    qreal m_aspectRatio=1.0;
+};
 class SettingRailButton final : public QToolButton {
 public:
     explicit SettingRailButton(QString name,QWidget *parent=nullptr):QToolButton(parent),glyph(name.left(2).toUpper()),icon(settingIcon(name)){setFixedSize(38,38);}
@@ -303,7 +322,7 @@ MainWindow::MainWindow(QWidget *parent):AspectraWindow(parent){
 MainWindow::~MainWindow(){if(cancelFlag)*cancelFlag=true;exportWatcher.waitForFinished();loadWatcher.waitForFinished();if(player)player->stop();if(recorder){recorder->write("q\n");recorder->waitForFinished(5000);if(recorder->state()!=QProcess::NotRunning)recorder->kill();}}
 void MainWindow::buildUi(){
     auto *root=new QVBoxLayout(this);root->setContentsMargins(0,0,0,0);auto *shell=new QWidget;shell->setObjectName("shell");root->addWidget(shell);auto *layout=new QVBoxLayout(shell);layout->setContentsMargins(16,12,16,0);layout->setSpacing(12);
-    auto *topBar=new TopBar(shell);layout->addWidget(topBar);filename=topBar->titleLabel;exportButton=topBar->exportButton;exportButton->setEnabled(false);connect(topBar->backButton,&QToolButton::clicked,this,[this]{navigate(-1);});connect(topBar->infoButton,&QToolButton::clicked,this,[this]{QDialog dialog(this);dialog.setWindowTitle("Aspectra X · Media info");auto *v=new QVBoxLayout(&dialog);v->addWidget(label(currentFile.isEmpty()?"No media selected":QFileInfo(inputAliases.value(currentFile,currentFile)).fileName()));v->addWidget(label(info?info->text():"No media","muted"));v->addWidget(label(batchLabel?batchLabel->text():"No batch","muted"));auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();});auto *menuButton=topBar->moreButton;auto *commandMenu=new QMenu(menuButton);menuButton->setMenu(commandMenu);menuButton->setPopupMode(QToolButton::InstantPopup);connect(topBar->exportButton,&QPushButton::clicked,this,&MainWindow::exportFiles);
+    auto *topBar=new TopBar(shell);layout->addWidget(topBar);filename=topBar->titleLabel;exportButton=topBar->exportButton;exportButton->setEnabled(false);connect(topBar->backButton,&QToolButton::clicked,this,[this]{clearMedia();showWelcomeScreen();});connect(topBar->infoButton,&QToolButton::clicked,this,[this]{QDialog dialog(this);dialog.setWindowTitle("Aspectra X · Media info");auto *v=new QVBoxLayout(&dialog);v->addWidget(label(currentFile.isEmpty()?"No media selected":QFileInfo(inputAliases.value(currentFile,currentFile)).fileName()));v->addWidget(label(info?info->text():"No media","muted"));v->addWidget(label(batchLabel?batchLabel->text():"No batch","muted"));auto *done=button("Done",v);connect(done,&QPushButton::clicked,&dialog,&QDialog::accept);dialog.exec();});auto *menuButton=topBar->moreButton;auto *commandMenu=new QMenu(menuButton);menuButton->setMenu(commandMenu);menuButton->setPopupMode(QToolButton::InstantPopup);connect(topBar->exportButton,&QPushButton::clicked,this,&MainWindow::exportFiles);
     undoButton=topBar->undoButton;redoButton=topBar->redoButton;connect(undoButton,&QToolButton::clicked,this,&MainWindow::undoRaster);connect(redoButton,&QToolButton::clicked,this,&MainWindow::redoRaster);auto *undoShortcut=new QShortcut(QKeySequence("Ctrl+Z"),this);undoShortcut->setContext(Qt::WindowShortcut);connect(undoShortcut,&QShortcut::activated,this,&MainWindow::undoRaster);auto *stepBackShortcut=new QShortcut(QKeySequence("Ctrl+Alt+Z"),this);stepBackShortcut->setContext(Qt::WindowShortcut);connect(stepBackShortcut,&QShortcut::activated,this,&MainWindow::undoRaster);auto *redoShortcut=new QShortcut(QKeySequence("Ctrl+Shift+Z"),this);redoShortcut->setContext(Qt::WindowShortcut);connect(redoShortcut,&QShortcut::activated,this,&MainWindow::redoRaster);updateUndoControls();
     auto *commandHost=new QWidget(shell);commandHost->hide();auto *toolbar=new QVBoxLayout(commandHost);toolbar->setContentsMargins(0,0,0,0);auto *import=button("+ Import",toolbar,"blue");connect(import,&QPushButton::clicked,this,&MainWindow::chooseFiles);auto *reset=button("Reset",toolbar,"pink");reset->setToolTip("Clear the entire current batch and preview. Source files are never deleted.");connect(reset,&QPushButton::clicked,this,&MainWindow::clearMedia);modes=new QButtonGroup(this);int id=0;for(const auto &name:QStringList{"Image","Video","Capture"}){auto *b=button(name,toolbar);b->setCheckable(true);modes->addButton(b,id++);}modes->button(0)->setChecked(true);auto *batch=button("Batch…",toolbar);connect(batch,&QPushButton::clicked,this,&MainWindow::manageBatch);
     auto *saveProject=button("Save Project…",toolbar,"gold");saveProject->setToolTip("Save linked sources, canvas placement, editable masks, and adjustment defaults to an Aspectra project.");connect(saveProject,&QPushButton::clicked,this,[this]{QString path=QFileDialog::getSaveFileName(this,"Save Aspectra project","aspectra-project.aspectra","Aspectra project (*.aspectra)");if(path.isEmpty())return;QJsonObject root;root["version"]=2;root["canvas"]=QJsonObject{{"width",widthInput->value()},{"height",heightInput->value()},{"ratio",ratio->currentText()}};QJsonArray layers;for(const auto &sourcePath:this->batch.files){const auto layer=canvasLayers.value(sourcePath);QJsonObject item{{"source",sourcePath},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible}};if(!layer.mask.isNull()){QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);layer.mask.save(&buffer,"PNG");item["maskPngBase64"]=QString::fromLatin1(bytes.toBase64());}layers.append(item);}root["layers"]=layers;auto a=adjustments();root["adjustments"]=QJsonObject{{"zoom",a.zoom},{"hue",a.hue},{"saturation",a.saturation},{"brightness",a.brightness},{"contrast",a.contrast},{"keyEnabled",a.chromaKey},{"keyColor",a.keyColor.name(QColor::HexArgb)},{"keyTolerance",a.keyTolerance},{"keySoftness",a.keySoftness},{"keyDespill",a.keyDespill},{"keyLumaProtect",a.keyLumaProtect},{"keyMatteBias",a.keyMatteBias},{"keyCleanBlack",a.keyCleanBlack},{"keyCleanWhite",a.keyCleanWhite}};QFile out(path);if(!out.open(QIODevice::WriteOnly)){showError("Could not save project.");return;}out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));status->setText("Project saved · linked canvas layers and masks are editable on reopen");});
@@ -808,7 +827,7 @@ void MainWindow::showWelcomeScreen(){
     tabsRail->setFrameShape(QFrame::NoFrame);
     tabsRail->setWidgetResizable(false);
     tabsRail->setFixedHeight(43);
-    tabsRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    tabsRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     tabsRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto *tabHost=new QWidget(tabsRail);
     auto *tabsLayout=new QHBoxLayout(tabHost);
@@ -826,9 +845,23 @@ void MainWindow::showWelcomeScreen(){
     auto *selectorLabel=new QLabel("PROJECT SELECTOR",&dialog);
     selectorLabel->setObjectName("WelcomeSection");
     root->addWidget(selectorLabel);
-    auto *gallery=new AspectraGalleryScreen(AspectraGalleryScreen::Presentation::ProjectSelector,&dialog);
-    gallery->setMinimumHeight(320);
-    root->addWidget(gallery,1);
+    auto *galleryStage=new QWidget(&dialog);
+    auto *galleryStageLayout=new QGridLayout(galleryStage);
+    galleryStageLayout->setContentsMargins(0,0,0,0);
+    galleryStageLayout->setSpacing(0);
+    auto *gallery=new AspectraGalleryScreen(AspectraGalleryScreen::Presentation::ProjectSelector,galleryStage);
+    gallery->setMinimumHeight(0);
+    auto *galleryOverlay=new QWidget(galleryStage);
+    galleryOverlay->setObjectName("WelcomeGalleryOverlay");
+    galleryOverlay->setStyleSheet("QWidget#WelcomeGalleryOverlay{background:rgba(5,6,8,210);}");
+    galleryOverlay->setAttribute(Qt::WA_TransparentForMouseEvents,false);
+    auto *overlayEffect=new QGraphicsOpacityEffect(galleryOverlay);
+    overlayEffect->setOpacity(0.0);
+    galleryOverlay->setGraphicsEffect(overlayEffect);
+    galleryStageLayout->addWidget(gallery,0,0);
+    galleryStageLayout->addWidget(galleryOverlay,0,0);
+    galleryOverlay->hide();
+    root->addWidget(galleryStage,1);
 
     auto *projectRail=new QHBoxLayout;
     auto *newProject=button("New Project",projectRail,"blue");
@@ -837,22 +870,83 @@ void MainWindow::showWelcomeScreen(){
     root->addLayout(projectRail);
     auto *settingsPanel=new QWidget(&dialog);
     settingsPanel->setMaximumHeight(0);
-    settingsPanel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
-    auto *settings=new QGridLayout(settingsPanel);
-    settings->setContentsMargins(10,10,10,10);
-    settings->setHorizontalSpacing(10);
-    settings->setVerticalSpacing(7);
-    auto *back=button("‹ Back to projects");
-    auto *create=button("Create Project",nullptr,"blue");
+    settingsPanel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+    auto *settings=new QVBoxLayout(settingsPanel);
+    settings->setContentsMargins(14,12,14,12);settings->setSpacing(10);
+    auto *topRow=new QHBoxLayout;topRow->setContentsMargins(0,0,0,0);topRow->setSpacing(10);
+    auto *back=button("‹ Back to projects",topRow);
+    topRow->addStretch(1);
+    auto *create=button("Create Project",topRow,"blue");
+    settings->addLayout(topRow);
     auto *projectWidth=number(1920,16384),*projectHeight=number(1080,16384),*projectResolution=number(300,2400);
+    auto *projectName=new QLineEdit("Untitled-1",settingsPanel);
+    projectName->setPlaceholderText("Project Name");
+    projectName->setClearButtonEnabled(true);
     auto *unit=new QComboBox(settingsPanel);unit->addItems({"px","in","mm"});
     auto *mode=new QComboBox(settingsPanel);mode->addItems({"RGB","CMYK","Grayscale"});
     auto *artboard=new QCheckBox("Artboard",settingsPanel);artboard->setChecked(true);
-    settings->addWidget(back,0,0,1,2);settings->addWidget(create,0,2,1,2);
-    settings->addWidget(label("Width"),1,0);settings->addWidget(projectWidth,1,1);settings->addWidget(label("Height"),1,2);settings->addWidget(projectHeight,1,3);
-    settings->addWidget(label("Unit"),2,0);settings->addWidget(unit,2,1);settings->addWidget(label("Resolution"),2,2);settings->addWidget(projectResolution,2,3);
-    settings->addWidget(label("Color mode"),3,0);settings->addWidget(mode,3,1);settings->addWidget(artboard,3,2,1,2);
+    auto *split=new QHBoxLayout;split->setContentsMargins(0,0,0,0);split->setSpacing(16);
+    auto *leftColumn=new QVBoxLayout;leftColumn->setContentsMargins(0,0,0,0);leftColumn->setSpacing(8);
+    auto *aspectPreview=new CanvasAspectPreview(projectWidth,projectHeight,settingsPanel);
+    leftColumn->addWidget(aspectPreview,1);
+    auto *middleColumn=new QVBoxLayout;middleColumn->setContentsMargins(0,0,0,0);middleColumn->setSpacing(8);
+    auto *presetCaption=label("DOCUMENT PRESETS","WelcomeSection");middleColumn->addWidget(presetCaption);
+    auto *presetHost=new QWidget(settingsPanel);presetHost->setObjectName("DocumentPresetGrid");
+    auto *presetLayout=new QGridLayout(presetHost);presetLayout->setContentsMargins(0,0,0,0);presetLayout->setHorizontalSpacing(7);presetLayout->setVerticalSpacing(7);presetLayout->setAlignment(Qt::AlignTop);
+    middleColumn->addWidget(presetHost,1);
+    auto makeDimensionSlider=[](QSpinBox *backing){
+        auto *control=new QWidget(backing->parentWidget());
+        auto *line=new QHBoxLayout(control);line->setContentsMargins(0,0,0,0);line->setSpacing(8);
+        auto *slider=new GradientSlider(control);slider->setRange(backing->minimum(),backing->maximum());slider->setValue(backing->value());
+        backing->setObjectName("DimensionNumberField");backing->setFixedWidth(72);backing->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        if(auto *editor=backing->findChild<QLineEdit*>())editor->setAlignment(Qt::AlignCenter);
+        line->addWidget(slider,1);line->addWidget(backing);
+        QObject::connect(slider,&QSlider::valueChanged,control,[backing](int value){QSignalBlocker guard(backing);backing->setValue(value);});
+        QObject::connect(backing,qOverload<int>(&QSpinBox::valueChanged),control,[slider](int value){QSignalBlocker guard(slider);slider->setValue(qBound(slider->minimum(),value,slider->maximum()));});
+        return control;
+    };
+    auto *widthControl=makeDimensionSlider(projectWidth);
+    auto *heightControl=makeDimensionSlider(projectHeight);
+    auto *resolutionControl=makeDimensionSlider(projectResolution);
+    for(auto *control:{widthControl,heightControl,resolutionControl})control->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    auto *rightColumn=new QVBoxLayout;rightColumn->setContentsMargins(0,0,0,0);rightColumn->setSpacing(8);
+    auto *form=new QFormLayout;form->setContentsMargins(0,0,0,0);form->setHorizontalSpacing(10);form->setVerticalSpacing(8);form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->addRow("Project Name",projectName);form->addRow("Width",widthControl);form->addRow("Height",heightControl);form->addRow("Resolution",resolutionControl);
+    auto *canvasFields=new QWidget(settingsPanel);auto *canvasFieldsLayout=new QHBoxLayout(canvasFields);canvasFieldsLayout->setContentsMargins(0,0,0,0);canvasFieldsLayout->setSpacing(8);canvasFieldsLayout->addWidget(unit,1);canvasFieldsLayout->addWidget(mode,1);
+    form->addRow("Canvas",canvasFields);form->addRow(QString{},artboard);
+    rightColumn->addLayout(form);rightColumn->addStretch(1);
+    split->addLayout(leftColumn,3);split->addLayout(middleColumn,2);split->addLayout(rightColumn,3);
+    settings->addLayout(split,1);
     root->addWidget(settingsPanel);
+
+    struct CanvasPreset { QString name; int width; int height; };
+    const QMap<int,QVector<CanvasPreset>> presetsByTab{
+        {0,{{"HD Frame",1920,1080},{"Square",1080,1080},{"4K UHD",3840,2160}}},
+        {2,{{"4 × 6 Photo",1800,1200},{"8 × 10 Photo",2400,3000},{"Instagram",1080,1080}}},
+        {3,{{"US Letter",2550,3300},{"A4",2480,3508},{"Tabloid",3300,5100}}},
+        {4,{{"Poster",3600,5400},{"Art Print",3000,3000},{"Canvas",4800,3600}}},
+        {5,{{"Full HD",1920,1080},{"Desktop",1366,768},{"Widescreen",1440,900}}},
+        {6,{{"iPhone",1170,2532},{"Android",1080,2400},{"Mobile Square",1080,1080}}},
+        {7,{{"HD Film",1920,1080},{"4K Film",3840,2160},{"Vertical Film",1080,1920}}}
+    };
+    auto updateAspect=[projectWidth,projectHeight,aspectPreview]{aspectPreview->setAspectRatio(projectWidth->value()/qreal(qMax(1,projectHeight->value())));};
+    connect(projectWidth,qOverload<int>(&QSpinBox::valueChanged),aspectPreview,[updateAspect](int){updateAspect();});
+    connect(projectHeight,qOverload<int>(&QSpinBox::valueChanged),aspectPreview,[updateAspect](int){updateAspect();});
+    for(auto *slider:{widthControl->findChild<QSlider*>(),heightControl->findChild<QSlider*>()})if(slider)connect(slider,&QSlider::valueChanged,aspectPreview,[updateAspect](int){updateAspect();});
+    auto rebuildPresets=[presetLayout,presetHost,projectWidth,projectHeight,updateAspect,presetsByTab](int tabId){
+        clearLayoutItems(presetLayout);
+        const QVector<CanvasPreset> presets=presetsByTab.value(tabId,presetsByTab.value(0));
+        for(int index=0;index<presets.size();++index){
+            const CanvasPreset &preset=presets[index];auto *card=new QToolButton(presetHost);
+            card->setText(QString("%1\n%2 × %3").arg(preset.name).arg(preset.width).arg(preset.height));card->setToolButtonStyle(Qt::ToolButtonTextOnly);card->setMinimumSize(118,58);card->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+            card->setStyleSheet("QToolButton{background:#0d1017;border:1px solid #303847;border-radius:9px;color:#dfeaff;font-size:10px;font-weight:700;}QToolButton:hover{border-color:#35c3f6;background:#151e2a;}");
+            presetLayout->addWidget(card,index/2,index%2);
+            connect(card,&QToolButton::clicked,presetHost,[projectWidth,projectHeight,updateAspect,preset]{projectWidth->setValue(preset.width);projectHeight->setValue(preset.height);updateAspect();});
+        }
+        for(int column=0;column<2;++column)presetLayout->setColumnStretch(column,1);
+        presetHost->updateGeometry();
+    };
+    updateAspect();
 
     auto filteredPaths=[tabGroup]{
         QStringList selected;
@@ -864,13 +958,29 @@ void MainWindow::showWelcomeScreen(){
         }
         return selected;
     };
-    auto rebuild=[gallery,selectorLabel,filteredPaths]{const QStringList paths=filteredPaths();gallery->setProjectPaths(paths);selectorLabel->setText(paths.isEmpty()?"PROJECT SELECTOR · NO RECENT PROJECTS":QString("PROJECT SELECTOR · %1 PROJECT%2").arg(paths.size()).arg(paths.size()==1?"":"S"));};
+    auto rebuild=[gallery,selectorLabel,filteredPaths,tabGroup,rebuildPresets]{const QStringList paths=filteredPaths();gallery->setProjectPaths(paths);selectorLabel->setText(paths.isEmpty()?"PROJECT SELECTOR · NO RECENT PROJECTS":QString("PROJECT SELECTOR · %1 PROJECT%2").arg(paths.size()).arg(paths.size()==1?"":"S"));rebuildPresets(tabGroup->checkedId());};
     bool expanded=false;
-    auto slidePanel=[&](bool open){if(expanded==open)return;expanded=open;settingsPanel->show();auto *animation=new QPropertyAnimation(settingsPanel,"maximumHeight",settingsPanel);animation->setDuration(220);animation->setEasingCurve(QEasingCurve::OutCubic);animation->setStartValue(settingsPanel->maximumHeight());animation->setEndValue(open?190:0);connect(animation,&QPropertyAnimation::finished,settingsPanel,[settingsPanel,open]{if(!open)settingsPanel->hide();});animation->start(QAbstractAnimation::DeleteWhenStopped);};
+    auto slidePanel=[&](bool open){
+        if(expanded==open)return;
+        expanded=open;
+        if(!open)settingsPanel->setMinimumHeight(0);
+        settingsPanel->show();
+        auto *animation=new QPropertyAnimation(settingsPanel,"maximumHeight",settingsPanel);
+        animation->setDuration(260);animation->setEasingCurve(QEasingCurve::OutCubic);
+        animation->setStartValue(settingsPanel->maximumHeight());animation->setEndValue(open?420:0);
+        connect(animation,&QPropertyAnimation::finished,settingsPanel,[settingsPanel,open]{if(open)settingsPanel->setMinimumHeight(420);else settingsPanel->hide();});
+        animation->start(QAbstractAnimation::DeleteWhenStopped);
+        if(open){galleryOverlay->show();galleryOverlay->raise();}
+        auto *overlayAnimation=new QPropertyAnimation(overlayEffect,"opacity",galleryOverlay);
+        overlayAnimation->setDuration(260);overlayAnimation->setEasingCurve(QEasingCurve::OutCubic);
+        overlayAnimation->setStartValue(overlayEffect->opacity());overlayAnimation->setEndValue(open?1.0:0.0);
+        connect(overlayAnimation,&QPropertyAnimation::finished,galleryOverlay,[galleryOverlay,open]{if(!open)galleryOverlay->hide();});
+        overlayAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+    };
     connect(tabGroup,&QButtonGroup::idClicked,&dialog,[rebuild](int){rebuild();});
     connect(newProject,&QPushButton::clicked,&dialog,[&]{slidePanel(true);});
     connect(back,&QPushButton::clicked,&dialog,[&]{slidePanel(false);});
-    connect(create,&QPushButton::clicked,&dialog,[this,projectWidth,projectHeight,projectResolution,unit,artboard,mode,&dialog]{const double scale=unit->currentText()=="in"?projectResolution->value():(unit->currentText()=="mm"?projectResolution->value()/25.4:1.0);createNewProject(qMax(1,qRound(projectWidth->value()*scale)),qMax(1,qRound(projectHeight->value()*scale)),projectResolution->value(),artboard->isChecked(),mode->currentText(),"sRGB IEC61966-2.1",Qt::transparent);dialog.accept();});
+    connect(create,&QPushButton::clicked,&dialog,[this,projectName,projectWidth,projectHeight,projectResolution,unit,artboard,mode,&dialog]{const double scale=unit->currentText()=="in"?projectResolution->value():(unit->currentText()=="mm"?projectResolution->value()/25.4:1.0);createNewProject(qMax(1,qRound(projectWidth->value()*scale)),qMax(1,qRound(projectHeight->value()*scale)),projectResolution->value(),artboard->isChecked(),mode->currentText(),"sRGB IEC61966-2.1",Qt::transparent);const QString name=projectName->text().trimmed();if(!name.isEmpty()&&canvasLayers.contains(currentFile))canvasLayers[currentFile].name=name;dialog.accept();});
     auto openPath=[this,&dialog](const QString &path){const QString suffix=QFileInfo(path).suffix().toLower();if(suffix=="aspectra")openProjectFile(path);else if(suffix=="obj"||suffix=="fbx"||suffix=="gltf"||suffix=="glb")loadModelFile(path);else loadFiles({path});dialog.accept();};
     connect(gallery,&AspectraGalleryScreen::openProjectRequested,&dialog,openPath);
     connect(loadProject,&QPushButton::clicked,&dialog,[&]{const QString path=QFileDialog::getOpenFileName(&dialog,"Load project or media",QSettings().value("lastImportFolder").toString(),"Aspectra and media (*.aspectra *.psd *.psb *.ai *.xd *.png *.jpg *.jpeg *.webp *.tif *.tiff *.mp4 *.mov *.webm *.mkv *.obj *.fbx *.gltf *.glb);;All files (*.*)");if(!path.isEmpty())openPath(path);});

@@ -2,27 +2,24 @@
 
 #include <QtWidgets>
 
-// A self-painting project tile. It owns the visual glass treatment, hover
-// geometry animation, and procedural Ken Burns thumbnail animation.
+// A self-painting project tile with a procedural, continuously moving 2.5D
+// thumbnail surface. The tile owns its geometry and visual animation.
 class GalleryTile final : public QWidget {
     Q_OBJECT
-    Q_PROPERTY(qreal kenBurnsProgress READ kenBurnsProgress WRITE setKenBurnsProgress NOTIFY kenBurnsProgressChanged)
 public:
     explicit GalleryTile(QString projectPath, QWidget *parent=nullptr);
 
     QString projectPath() const { return m_projectPath; }
     QRect baseGeometry() const { return m_baseGeometry; }
-    qreal kenBurnsProgress() const { return m_kenBurnsProgress; }
+    qreal timeScale() const { return m_timeScale; }
 
     void setBaseGeometry(const QRect &geometry, bool animate=false);
     void animateTo(const QRect &geometry, const QEasingCurve &curve);
-    void setKenBurnsProgress(qreal progress);
 
 signals:
     void hoverStarted(GalleryTile *tile);
     void hoverEnded(GalleryTile *tile);
     void openProjectRequested(const QString &path);
-    void kenBurnsProgressChanged(qreal progress);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -34,14 +31,17 @@ private:
     QString m_projectPath;
     QImage m_thumbnail;
     QRect m_baseGeometry;
-    QVector<QPointF> m_focalPoints;
     QVariantAnimation *m_geometryAnimation=nullptr;
-    QVariantAnimation *m_kenBurnsAnimation=nullptr;
-    qreal m_kenBurnsProgress=0.0;
+    QVariantAnimation *m_hoverAnimation=nullptr;
+    QTimer m_motionTimer;
+    qreal m_timeScale=0.0;
+    qreal m_hoverIntensity=0.0;
     bool m_hovered=false;
 
     void loadThumbnail();
-    void buildFocalPoints();
     void paintThumbnail(QPainter &painter, const QRectF &bounds) const;
+    QTransform perspectiveTransform(const QRectF &bounds) const;
     QColor accentColor() const;
+    QString displayName() const;
+    QString displayType() const;
 };

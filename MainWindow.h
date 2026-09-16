@@ -44,12 +44,12 @@ private:
     QSpinBox *maskBrushSize=nullptr;
     QSlider *zoom=nullptr,*batchNavigator=nullptr;
     QCheckBox *lock=nullptr,*zip=nullptr,*rar=nullptr,*flat=nullptr,*guides=nullptr,*chromaKeyEnabled=nullptr,*perImageOverride=nullptr;QSlider *keyToleranceSlider=nullptr,*keySoftnessSlider=nullptr,*keyDespillSlider=nullptr,*keyLumaProtectSlider=nullptr,*keyMatteBiasSlider=nullptr,*keyCleanBlackSlider=nullptr,*keyCleanWhiteSlider=nullptr;
-    QComboBox *ratio=nullptr,*previewVariant=nullptr,*navigation=nullptr,*archiveMode=nullptr,*workerCount=nullptr,*trackBlend=nullptr,*trackTransition=nullptr;QLineEdit *textLayerInput=nullptr;
+    QComboBox *ratio=nullptr,*previewVariant=nullptr,*navigation=nullptr,*archiveMode=nullptr,*workerCount=nullptr,*trackBlend=nullptr,*trackTransition=nullptr;
     QDoubleSpinBox *inMarker=nullptr,*outMarker=nullptr;
-    QListWidget *sizes=nullptr,*batchStrip=nullptr,*trackList=nullptr,*modelTextureList=nullptr;QTreeWidget *layerDrawer=nullptr;QTableWidget *clipTable=nullptr;QScrollArea *tabCarousel=nullptr,*artboardRail=nullptr;QWidget *bottomDock=nullptr,*artboardRailContent=nullptr,*carouselContent=nullptr,*carouselLeftFade=nullptr,*carouselRightFade=nullptr;QPointer<QPropertyAnimation> carouselBounce;
+    QListWidget *sizes=nullptr,*batchStrip=nullptr,*trackList=nullptr,*modelTextureList=nullptr;QTableWidget *clipTable=nullptr;QScrollArea *tabCarousel=nullptr;QWidget *bottomDock=nullptr,*carouselContent=nullptr,*carouselLeftFade=nullptr,*carouselRightFade=nullptr;QPointer<QPropertyAnimation> carouselBounce;
     QTabWidget *tabs=nullptr;
     QPushButton *exportButton=nullptr,*playButton=nullptr,*captureButton=nullptr,*saveTraceButton=nullptr;QToolButton *modelRail=nullptr,*undoButton=nullptr,*redoButton=nullptr;
-    QWidget *captureRow=nullptr,*videoRow=nullptr,*videoWorkspace=nullptr,*textCard=nullptr;QButtonGroup *modes=nullptr;
+    QWidget *captureRow=nullptr,*videoRow=nullptr,*videoWorkspace=nullptr;QButtonGroup *modes=nullptr;
     QMap<QString,QSlider*> sliders;QMap<QString,QCheckBox*> styleChecks;
     QVector<QDoubleSpinBox*> safeInputs,paddingInputs;
     QMap<QString,QCheckBox*> imageFormats,videoFormats;
@@ -96,7 +96,7 @@ private:
     QWidget *imageFormatRow=nullptr,*videoFormatRow=nullptr,*audioFormatRow=nullptr;
     QRect lastCaptureArea;
     bool pixelMargins=false,discardRecording=false,capturePending=false;
-    void buildPowerFeatures();void buildTextCard();void selectTextCard(int);void clearMedia();void mediaContext();void routeMode(int);void openImageInCompositor();
+    void buildPowerFeatures();void clearMedia();void mediaContext();void routeMode(int);void openImageInCompositor();
     void rotateMedia(int);void changeMarginUnits(int);QMarginsF normalizedMargins(const QVector<QDoubleSpinBox*>&) const;
     void seekMedia(double);void deliverFrame(const QImage &);void fullScreenPlayer();
     void ingestCapture(QImage);void annotateMedia();void configureCapture();

@@ -1119,7 +1119,7 @@ void MainWindow::updateTrackPanel(){
     }
     const bool have=!timelineTracks.isEmpty();
     for(auto *control:{static_cast<QWidget*>(trackX),static_cast<QWidget*>(trackY),static_cast<QWidget*>(trackScale),static_cast<QWidget*>(trackRotation),static_cast<QWidget*>(trackOpacity),static_cast<QWidget*>(trackBlend),static_cast<QWidget*>(trackTransition)})if(control)control->setEnabled(have);
-    if(timeline)timeline->setTracks(timelineTracks);updateLayerDrawer();selectTextCard(selected);
+    if(timeline)timeline->setTracks(timelineTracks);updateLayerDrawer();
 }
 QImage MainWindow::compositeTimelineTracks(const QImage &source) const{
     const double time=compositionMode&&!VideoProcessor::isVideo(currentFile)?compositionPosition:(player?qMax(0.,player->position()/1000.):0.);

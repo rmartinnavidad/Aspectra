@@ -861,43 +861,42 @@ void MainWindow::buildUi(){
 
                 QObject::connect(newLayerBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget, detailRowList, populateRailPtr, populateLayersPtr]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards Mode: create a real workspace artboard to the right.
+                        // Artboards Mode: append directly to the existing
+                        // LeftToRight artboard rail.
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
                         CanvasLayer layer;
                         layer.source = artboardId;
                         layer.name = QString("Artboard %1").arg(batch.files.size() + 1);
                         layer.nativeSize = QSize(widthInput->value(), heightInput->value());
-
-                        constexpr qreal artboardGap = 64.0;
-                        bool foundArtboard = false;
-                        qreal rightMost = 0.0;
-                        for (const QString &source : batch.files) {
-                            if (!source.startsWith(QLatin1String("aspectra://")) || !canvasLayers.contains(source)) continue;
-                            const CanvasLayer &existing = canvasLayers[source];
-                            const QSize existingSize = existing.nativeSize.isValid() ? existing.nativeSize : QSize(widthInput->value(), heightInput->value());
-                            const qreal existingRight = existing.artboardPosition.x() + existingSize.width();
-                            rightMost = foundArtboard ? qMax(rightMost, existingRight) : existingRight;
-                            foundArtboard = true;
-                        }
-                        layer.artboardPosition = foundArtboard ? QPointF(rightMost + artboardGap, 0.0) : QPointF(0.0, 0.0);
-                        layer.artboardImage = QImage(layer.nativeSize, QImage::Format_ARGB32);
-                        layer.artboardImage.fill(Qt::transparent);
                         canvasLayers[artboardId] = layer;
 
                         batch.files.append(artboardId);
                         updateBatchLabel();
 
-                        if (populateRailPtr) (*populateRailPtr)();
+                        // Remove the temporary placeholder before inserting the
+                        // first real artboard.
+                        if (railWidget->count() == 1) {
+                            QListWidgetItem *first = railWidget->item(0);
+                            if (first && first->data(Qt::UserRole).toString().isEmpty())
+                                delete railWidget->takeItem(0);
+                        }
+
+                        // addItem() appends to the end. railWidget is configured
+                        // LeftToRight with wrapping disabled, so this places the
+                        // new artboard directly to the RIGHT of the existing one.
+                        auto *item = new QListWidgetItem("📁 " + layer.name);
+                        item->setData(Qt::UserRole, artboardId);
+                        item->setSizeHint(QSize(240, 64));
+                        railWidget->addItem(item);
+                        railWidget->setCurrentItem(item);
+                        item->setSelected(true);
+
                         selectFile(artboardId);
 
-                        if (railWidget->count() > 0) {
-                            railWidget->setCurrentRow(railWidget->count() - 1);
-                            railWidget->scrollToItem(railWidget->item(railWidget->count() - 1), QAbstractItemView::PositionAtRight);
-                        if (auto *bar = railWidget->horizontalScrollBar())
-                            bar->setValue(bar->maximum());    
-                        }
-                        refresh();
-                        status->setText("New artboard added to workspace");
+                        // Ensure the newly appended artboard is visible.
+                        railWidget->scrollToItem(item, QAbstractItemView::EnsureVisible);
+
+                        status->setText("New artboard added");
                     } else {
                         // Layers Mode: Create timeline track owned by current artboard
                         TimelineTrack track;
@@ -1092,7 +1091,6 @@ void MainWindow::buildUi(){
     };
     connect(preview,&PreviewWidget::canvasTapped,this,collapseSettings);
     connect(preview,&PreviewWidget::importRequested,this,&MainWindow::chooseFiles);
-    connect(preview,&PreviewWidget::artboardSelected,this,[this](const QString &id){if(id.isEmpty()||id==currentFile||!canvasLayers.contains(id))return;selectFile(id);});
     auto *tapRelay=new TapRelay(collapseSettings,this);
     mainPreview->installEventFilter(tapRelay);
     stageHost->installEventFilter(tapRelay);
@@ -1327,7 +1325,7 @@ void MainWindow::refresh(){
     if(!currentFile.isEmpty()&&!original.isNull()){
         QImage composed=original;
         if(canvasLayers.contains(currentFile)){
-            auto &layer=canvasLayers[currentFile];
+            const auto &layer=canvasLayers[currentFile];
             if(!layer.visible||layer.opacity<1.||layer.fill<1.||layer.position!=QPointF()){
                 QImage canvas(QSize(widthInput->value(),heightInput->value()),QImage::Format_ARGB32);
                 canvas.fill(Qt::transparent);
@@ -1336,36 +1334,12 @@ void MainWindow::refresh(){
                 painter.drawImage(layer.position,original);
                 composed=canvas;
             }
-            composed=compositeTimelineTracks(composed);
-            if(currentFile.startsWith(QLatin1String("aspectra://"))) layer.artboardImage=composed;
-        } else {
-            composed=compositeTimelineTracks(composed);
         }
-        preview->setFrame(composed);
+        preview->setFrame(compositeTimelineTracks(composed));
     }
     int variant=previewVariant->currentIndex();preview->setAdjustments(adjustments(),QSize(widthInput->value(),heightInput->value()),variant?&presets[variant-1]:nullptr);
     if(tabs&&tabs->currentIndex()==6&&!original.isNull()&&textureMapPreview&&!textureBgw.isEmpty())textureRefreshTimer.start();else if(tabs&&tabs->currentIndex()==7&&!original.isNull()){preview->setTextureSphereInteractive(false);updatePatternPreview();}else{preview->setTextureSphereInteractive(false);preview->clearTextureFrame();}
     preview->setGuides(guides->isChecked(),normalizedMargins(safeInputs));
-
-    QVector<PreviewArtboard> workspace;
-    for(const QString &source:batch.files){
-        if(!source.startsWith(QLatin1String("aspectra://"))||!canvasLayers.contains(source))continue;
-        const CanvasLayer &layer=canvasLayers[source];
-        PreviewArtboard artboard;
-        artboard.id=source;
-        artboard.name=layer.name;
-        artboard.position=layer.artboardPosition;
-        artboard.size=layer.nativeSize.isValid()?layer.nativeSize:QSize(widthInput->value(),heightInput->value());
-        artboard.image=layer.artboardImage;
-        if(artboard.image.isNull()){
-            artboard.image=QImage(artboard.size,QImage::Format_ARGB32);
-            artboard.image.fill(Qt::transparent);
-        }
-        artboard.active=(source==currentFile);
-        artboard.visible=layer.visible;
-        workspace.append(artboard);
-    }
-    if(workspace.isEmpty())preview->clearArtboards();else preview->setArtboards(workspace);
 }
 void MainWindow::refreshTexturePreview(){
     if(!tabs||tabs->currentIndex()!=6||original.isNull()||!textureMapPreview||textureBgw.isEmpty())return;

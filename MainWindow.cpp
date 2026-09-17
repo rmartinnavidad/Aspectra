@@ -858,12 +858,14 @@ void MainWindow::buildUi(){
                                 image = reader.read();
                             }
                             int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;
-                            const QString layerText=QString("%1  [%2]").arg(displayName).arg(layerCount);
-                            auto *item=new QListWidgetItem(thumbnailIcon(image,40),layerText);
-                            item->setData(Qt::UserRole,path);
-                            item->setData(Qt::UserRole+1,layerCount);
-                            item->setSizeHint(QSize(240,64)); // Explicit enforcement
+                            auto *item=new QListWidgetItem;item->setData(Qt::UserRole,path);item->setData(Qt::UserRole+1,layerCount);item->setSizeHint(QSize(240,64)); // Explicit enforcement
                             railWidget->addItem(item);
+                            auto *card=new QWidget(railWidget);card->setAttribute(Qt::WA_TransparentForMouseEvents);auto *cardRow=new QHBoxLayout(card);cardRow->setContentsMargins(6,4,8,4);cardRow->setSpacing(8);
+                            auto *thumb=new QLabel(card);thumb->setPixmap(thumbnailIcon(image,40).pixmap(40,40));thumb->setFixedSize(40,40);thumb->setAlignment(Qt::AlignCenter);
+                            auto *nameLabel=new QLabel(displayName,card);nameLabel->setStyleSheet("color:#ffffff;font-size:11px;font-weight:600;background:transparent;");nameLabel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+                            auto *layerWheel=new QLabel(QString::number(layerCount),card);layerWheel->setObjectName("SliderValue");layerWheel->setFixedSize(30,30);layerWheel->setAlignment(Qt::AlignCenter);layerWheel->setToolTip(QString("%1 layer%2 in this artboard").arg(layerCount).arg(layerCount==1?"":"s"));
+                            cardRow->addWidget(thumb);cardRow->addWidget(nameLabel,1);cardRow->addWidget(layerWheel);
+                            railWidget->setItemWidget(item,card);
                             if (path == currentFile) {
                                 item->setSelected(true);
                                 railWidget->setCurrentItem(item);

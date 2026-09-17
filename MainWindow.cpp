@@ -709,6 +709,7 @@ void MainWindow::buildUi(){
                 railWidget->setResizeMode(QListView::Adjust);
                 railWidget->setMovement(QListView::Snap);
                 railWidget->setGridSize(QSize(248, 72));
+                railWidget->setIconSize(QSize(40, 40));
                 railWidget->setFixedHeight(96);
                 railWidget->setSpacing(8);
                 railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -839,12 +840,12 @@ void MainWindow::buildUi(){
                     showArtboardWorkspace();
                 };
 
-                *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, syncLayerControls](const QString &sourcePath) {
+                *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, syncLayerControls, thumbnailIcon](const QString &sourcePath) {
                     if (sourcePath.isEmpty()) return;
                     if (sourcePath != currentFile) selectFile(sourcePath);
                     detailRowList->clear();
 
-                    auto createLayerRow = [this](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
+                    auto createLayerRow = [this, sourcePath, thumbnailIcon](const QString &layerName, const QImage &image, const QImage &mask, bool baseRow, bool isVisible, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
                         auto *rowItemWidget = new QWidget;
                         auto *rowLayout = new QHBoxLayout(rowItemWidget);
                         rowLayout->setContentsMargins(4, 2, 4, 2);
@@ -858,8 +859,36 @@ void MainWindow::buildUi(){
                         });
                         rowLayout->addWidget(eyeBtn);
 
-                        auto *thumbLbl = new QLabel; thumbLbl->setFixedSize(24, 24); thumbLbl->setStyleSheet("background: #000000; border: 1px solid #33333b; border-radius: 4px;"); rowLayout->addWidget(thumbLbl);
-                        if (hasMask) { auto *maskLbl = new QLabel; maskLbl->setFixedSize(24, 24); maskLbl->setStyleSheet("background: #ffffff; border: 1px solid #33333b; border-radius: 4px;"); rowLayout->addWidget(maskLbl); }
+                        auto *imageButton = new QToolButton(rowItemWidget);
+                        imageButton->setFixedSize(28, 28);imageButton->setIconSize(QSize(24, 24));imageButton->setIcon(thumbnailIcon(image, 24));
+                        imageButton->setToolTip("Image thumbnail · click to return to artwork");
+                        imageButton->setStyleSheet(QString("QToolButton{background:#11151a;border:2px solid %1;border-radius:4px;}").arg(baseRow&&!preview->isMaskEditMode()?"#3ddcff":"#333b46"));
+                        rowLayout->addWidget(imageButton);
+                        if (baseRow) QObject::connect(imageButton, &QToolButton::clicked, rowItemWidget, [this, imageButton, rowItemWidget]() {
+                            preview->setMaskEditMode(false);
+                            imageButton->setStyleSheet("QToolButton{background:#11151a;border:2px solid #3ddcff;border-radius:4px;}");
+                            for (auto *button : rowItemWidget->findChildren<QToolButton*>("MaskThumbnail")) button->setStyleSheet("QToolButton{background:#11151a;border:2px solid #333b46;border-radius:4px;}");
+                            status->setText("Editing artwork thumbnail");
+                        });
+                        if (baseRow && !mask.isNull()) {
+                            auto *maskButton = new QToolButton(rowItemWidget);
+                            maskButton->setObjectName("MaskThumbnail");maskButton->setFixedSize(28, 28);maskButton->setIconSize(QSize(24, 24));maskButton->setIcon(thumbnailIcon(mask, 24));
+                            maskButton->setToolTip("Alt+click to view and paint this mask; Shift+drag paints black");
+                            maskButton->setStyleSheet(QString("QToolButton{background:#11151a;border:2px solid %1;border-radius:4px;}").arg(preview->isMaskEditMode()?"#3ddcff":"#333b46"));
+                            rowLayout->addWidget(maskButton);
+                            QObject::connect(maskButton, &QToolButton::clicked, rowItemWidget, [this, sourcePath, imageButton, maskButton]() {
+                                if (!(QApplication::keyboardModifiers() & Qt::AltModifier)) { status->setText("Alt+click the mask thumbnail to edit it"); return; }
+                                if (currentFile != sourcePath) selectFile(sourcePath);
+                                preview->setLayerMask(canvasLayers[sourcePath].mask);
+                                preview->setMaskEditMode(true);
+                                imageButton->setStyleSheet("QToolButton{background:#11151a;border:2px solid #333b46;border-radius:4px;}");
+                                maskButton->setStyleSheet("QToolButton{background:#11151a;border:2px solid #3ddcff;border-radius:4px;}");
+                                status->setText("Editing mask · drag to reveal · Shift+drag to hide · click artwork thumbnail to exit");
+                            });
+                            QObject::connect(preview, &PreviewWidget::maskBrushed, maskButton, [this, sourcePath, maskButton, thumbnailIcon](QPointF, bool, int) {
+                                if (sourcePath == currentFile) maskButton->setIcon(thumbnailIcon(canvasLayers[sourcePath].mask, 24));
+                            });
+                        }
 
                         auto *nameLbl = new QLabel(layerName); nameLbl->setStyleSheet("color: #ffffff; font-size: 11px; font-weight: 600; background: transparent;"); rowLayout->addWidget(nameLbl);
                         rowLayout->addStretch(1);
@@ -873,10 +902,11 @@ void MainWindow::buildUi(){
                     auto *baseItem = new QListWidgetItem(detailRowList);
                     baseItem->setSizeHint(QSize(0, 40));
                     bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
-                    bool hasMask = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].mask.isNull();
                     QString baseName = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() ? canvasLayers[sourcePath].name : (sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName());
-                    
-                    auto *baseWidget = createLayerRow(baseName, baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
+                    QImage baseImage = canvasLayers.value(sourcePath).artboardImage;
+                    if (baseImage.isNull() && sourcePath == currentFile) baseImage = original;
+                    if (baseImage.isNull() && !sourcePath.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(sourcePath);reader.setScaledSize(QSize(64,64));baseImage=reader.read(); }
+                    auto *baseWidget = createLayerRow(baseName, baseImage, canvasLayers.value(sourcePath).mask, true, baseVisible, true, true, [this, sourcePath](bool visible) {
                         if (canvasLayers.contains(sourcePath)) { canvasLayers[sourcePath].visible = visible; refresh(); }
                     });
                     detailRowList->setItemWidget(baseItem, baseWidget);
@@ -890,7 +920,7 @@ void MainWindow::buildUi(){
                         QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
                         auto *item = new QListWidgetItem(detailRowList);
                         item->setSizeHint(QSize(0, 40));
-                        auto *trackWidget = createLayerRow(tName, track.enabled, false, false, false, [this, i](bool visible) {
+                        auto *trackWidget = createLayerRow(tName, track.image, {}, false, track.enabled, false, false, [this, i](bool visible) {
                             if (i >= 0 && i < timelineTracks.size()) { timelineTracks[i].enabled = visible; updateTrackPanel(); refresh(); }
                         });
                         detailRowList->setItemWidget(item, trackWidget);

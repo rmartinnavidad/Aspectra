@@ -733,8 +733,34 @@ void MainWindow::buildUi(){
                 // --- Shared Lambdas using shared_ptr to safely break scope dead-ends ---
                 auto populateRailPtr = std::make_shared<std::function<void()>>();
                 auto populateLayersPtr = std::make_shared<std::function<void(const QString&)>>();
+                auto showArtboardWorkspace = [this]() {
+                    QVector<PreviewArtboard> artboards;
+                    qreal nextX = 0;
+                    for (const QString &path : batch.files) {
+                        const CanvasLayer layer = canvasLayers.value(path);
+                        const QSize size = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
+                        PreviewArtboard board;
+                        board.id = path;
+                        board.name = layer.name.isEmpty() ? inputTitles.value(path, QFileInfo(path).completeBaseName()) : layer.name;
+                        board.position = QPointF(nextX, 0);
+                        board.size = size;
+                        board.active = path == currentFile;
+                        board.visible = layer.visible;
+                        if (path == currentFile) board.image = original;
+                        else if (!path.startsWith(QLatin1String("aspectra://"))) {
+                            QImageReader reader(path);
+                            const QSize sourceSize = reader.size();
+                            if (sourceSize.isValid()) reader.setScaledSize(sourceSize.scaled(1200, 1200, Qt::KeepAspectRatio));
+                            board.image = reader.read();
+                        }
+                        artboards.append(board);
+                        nextX += size.width() + 48;
+                    }
+                    if (artboards.size() > 1) preview->setArtboards(artboards);
+                    else preview->clearArtboards();
+                };
 
-                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
+                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace]() {
                     railWidget->clear();
                     
                     if (batch.files.isEmpty()) {
@@ -761,6 +787,7 @@ void MainWindow::buildUi(){
                     backBtn->hide();
                     crumbLabel->setText("Artboards");
                     blendCombo->setCurrentText("Pass Through");
+                    showArtboardWorkspace();
                 };
 
                 *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
@@ -823,6 +850,7 @@ void MainWindow::buildUi(){
                     }
 
                     stackWidget->setCurrentIndex(1);
+                    preview->clearArtboards();
                     backBtn->show();
                     crumbLabel->setText("Artboards / " + baseName);
                     blendCombo->setCurrentText("Normal");
@@ -833,6 +861,18 @@ void MainWindow::buildUi(){
                         QString path = item->data(Qt::UserRole).toString();
                         if (!path.isEmpty()) (*populateLayersPtr)(path);
                     }
+                });
+                QObject::connect(railWidget, &QListWidget::itemClicked, this, [this, showArtboardWorkspace](QListWidgetItem *item) {
+                    const QString path = item ? item->data(Qt::UserRole).toString() : QString();
+                    if (!path.isEmpty() && path != currentFile) selectFile(path);
+                    showArtboardWorkspace();
+                });
+                QObject::connect(preview, &PreviewWidget::artboardSelected, railWidget, [this, railWidget, showArtboardWorkspace](const QString &path) {
+                    if (!batch.files.contains(path)) return;
+                    selectFile(path);
+                    for (int i = 0; i < railWidget->count(); ++i)
+                        if (railWidget->item(i)->data(Qt::UserRole).toString() == path) { railWidget->setCurrentRow(i); break; }
+                    showArtboardWorkspace();
                 });
 
                 QObject::connect(backBtn, &QToolButton::clicked, [populateRailPtr]() {
@@ -877,8 +917,8 @@ void MainWindow::buildUi(){
                         batch.files.append(artboardId);
                         updateBatchLabel();
                         
-                        if (populateRailPtr) (*populateRailPtr)();
                         selectFile(artboardId);
+                        if (populateRailPtr) (*populateRailPtr)();
                         
                         if (railWidget->count() > 0) {
                             railWidget->setCurrentRow(railWidget->count() - 1);
@@ -1659,7 +1699,7 @@ void MainWindow::loadFiles(const QStringList &paths){
 void MainWindow::selectFile(const QString &path){
       if(batchStrip){batchStrip->show();if(auto *dock=batchStrip->parentWidget())dock->setFixedHeight(164);}if(exportButton)exportButton->setEnabled(true);
       if(loading)return;stopPlayback();player->setSource({});currentFile=path;const bool isArtboard=path.startsWith(QLatin1String("aspectra://"));if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=isArtboard?QString("Artboard %1").arg(batch.files.indexOf(path)+1):QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();if(isArtboard)layer.nativeSize=QSize(widthInput->value(),heightInput->value());canvasLayers[path]=layer;}restoreLayerOverride();bool video=!isArtboard&&VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
-    QString name=isArtboard?canvasLayers.value(path).name:inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());filename->setText(fontMetrics().elidedText(name,Qt::ElideMiddle,qMax(160,width()-190)));filename->setToolTip(isArtboard?name:inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
+    QString name=isArtboard?canvasLayers.value(path).name:inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());filename->setText(fontMetrics().elidedText(name,Qt::ElideMiddle,qMax(160,width()-190)));filename->setToolTip(isArtboard?name:inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}if(batchNavigator){QSignalBlocker block(batchNavigator);batchNavigator->setValue(batch.files.indexOf(path));}preview->setActiveArtboard(path);navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
     if(isArtboard){
         // Artboards are synthetic canvases with no file on disk (identified by
         // an aspectra:// URI). Routing them through the async file/video loader
@@ -1675,7 +1715,7 @@ void MainWindow::selectFile(const QString &path){
 }
 void MainWindow::navigate(int delta){if(batch.files.isEmpty()||loading)return;int index=batch.files.indexOf(currentFile);index=(index+delta+batch.files.size())%batch.files.size();selectFile(batch.files[index]);}
 void MainWindow::updateBatchLabel(){
-    qint64 sourceBytes=0;for(const auto &path:batch.files)sourceBytes+=QFileInfo(path).size();int formats=0;for(auto it=imageFormats.cbegin();it!=imageFormats.cend();++it)if(it.value()->isChecked())++formats;for(auto it=videoFormats.cbegin();it!=videoFormats.cend();++it)if(it.value()->isChecked())++formats;double estimate=sourceBytes*(formats?qMax(.1,formats*(quality?quality->value()/100.:.9)):1.);auto formatBytes=[](double bytes){return bytes<1024*1024?QString::number(qRound(bytes/1024))+" KB":QString::number(bytes/(1024*1024),'f',1)+" MB";};batchLabel->setText(QString("%1 selected · source %2 · estimated export %3").arg(batch.files.size()).arg(formatBytes(sourceBytes)).arg(formatBytes(estimate)));batchLabel->setToolTip("Estimate uses selected formats and quality. Actual video and compressed-image output can vary.");QSignalBlocker block(navigation);navigation->clear();for(const auto &path:batch.files)navigation->addItem(inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName()),path);navigation->setCurrentIndex(batch.files.indexOf(currentFile));navLabel->setText(QString("%1 / %2").arg(qMax(0,batch.files.indexOf(currentFile)+1)).arg(batch.files.size()));
+    qint64 sourceBytes=0;for(const auto &path:batch.files)sourceBytes+=QFileInfo(path).size();int formats=0;for(auto it=imageFormats.cbegin();it!=imageFormats.cend();++it)if(it.value()->isChecked())++formats;for(auto it=videoFormats.cbegin();it!=videoFormats.cend();++it)if(it.value()->isChecked())++formats;double estimate=sourceBytes*(formats?qMax(.1,formats*(quality?quality->value()/100.:.9)):1.);auto formatBytes=[](double bytes){return bytes<1024*1024?QString::number(qRound(bytes/1024))+" KB":QString::number(bytes/(1024*1024),'f',1)+" MB";};batchLabel->setText(QString("%1 selected · source %2 · estimated export %3").arg(batch.files.size()).arg(formatBytes(sourceBytes)).arg(formatBytes(estimate)));batchLabel->setToolTip("Estimate uses selected formats and quality. Actual video and compressed-image output can vary.");QSignalBlocker block(navigation);navigation->clear();for(const auto &path:batch.files)navigation->addItem(canvasLayers.value(path).name.isEmpty()?inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName()):canvasLayers.value(path).name,path);navigation->setCurrentIndex(batch.files.indexOf(currentFile));if(batchNavigator){QSignalBlocker sliderBlock(batchNavigator);batchNavigator->setRange(0,qMax(0,int(batch.files.size())-1));batchNavigator->setValue(qMax(0,batch.files.indexOf(currentFile)));}navLabel->setText(QString("%1 / %2").arg(qMax(0,batch.files.indexOf(currentFile)+1)).arg(batch.files.size()));
 }
 void MainWindow::manageBatch(){
     QDialog dialog(this);dialog.setWindowTitle("Selected images & videos");dialog.resize(490,380);auto *v=new QVBoxLayout(&dialog);auto *list=new QListWidget;list->setSelectionMode(QAbstractItemView::ExtendedSelection);v->addWidget(list,1);

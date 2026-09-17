@@ -4,7 +4,8 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "[1/5] Stopping running Aspectra instances..." -ForegroundColor Cyan
-Get-Process Aspectra -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "Aspectra" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "Aspectra X" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Host "[2/5] Compiling via Ninja (Release mode)..." -ForegroundColor Cyan
 $vc = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
@@ -20,7 +21,8 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "[3/5] Inspecting dependencies with dumpbin..." -ForegroundColor Cyan
 $source = "$build\Aspectra.exe"
-$target = 'C:\Users\rmart\Documents\Codex\2026-09-06\ki\outputs\Aspectra X\Aspectra.exe'
+$targetDir = 'C:\Users\rmart\Documents\Codex\2026-09-06\ki\outputs\Aspectra X'
+$target = "$targetDir\Aspectra.exe"
 $dump = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\dumpbin.exe'
 $deploy = 'C:\Users\rmart\Documents\Codex\2026-09-06\ki\work\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe'
 
@@ -30,11 +32,12 @@ if ($deps -match '(?im)^\s*(Qt6\S*d\.dll|MSVCRTD\.dll|ucrtbased\.dll)\s*$') {
 }
 
 Write-Host "[4/5] Deploying canonical executable & running windeployqt..." -ForegroundColor Cyan
+if (!(Test-Path $targetDir)) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
 Copy-Item -LiteralPath $source -Destination $target -Force
 & $deploy --release --compiler-runtime --force --no-translations $target
 
-Write-Host "[5/5] Launching Aspectra X & triggering background git sync..." -ForegroundColor Green
-Start-Process -FilePath $target -WorkingDirectory (Split-Path $target)
+Write-Host "[5/5] Re-launching Aspectra X & triggering background git sync..." -ForegroundColor Green
+Start-Process -FilePath $target -WorkingDirectory $targetDir
 
 # Fire-and-forget headless git background sync
 Start-Job -ScriptBlock {
@@ -48,4 +51,4 @@ Start-Job -ScriptBlock {
     }
 } | Out-Null
 
-Write-Host "Pipeline complete. App is live and syncing!" -ForegroundColor Green
+Write-Host "Pipeline complete. App is reopened, live, and syncing!" -ForegroundColor Green

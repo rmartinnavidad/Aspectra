@@ -123,7 +123,6 @@ void MainWindow::buildPowerFeatures(){
         auto *subRail=findChild<QScrollArea*>("SubSettingsRail");
         auto *addRail=findChild<QWidget*>("AddIconRail");
         auto *settingsHost=tabs?tabs->parentWidget():nullptr;
-        auto *workspace=settingsHost?qobject_cast<QSplitter*>(settingsHost->parentWidget()):nullptr;
         auto *stage=findChild<QWidget*>("StageHost");
         auto *mainPreview=findChild<QWidget*>("MainPreview");
         auto setFocusSurface=[](QWidget *surface,bool on){
@@ -160,7 +159,7 @@ void MainWindow::buildPowerFeatures(){
             if(subRail)subRail->show();
             if(addRail)addRail->show();
             setFocusSurface(findChild<QWidget*>("TopBar"),true);
-            setFocusSurface(mainPreview,true);setFocusSurface(stage,true);setFocusSurface(settingsHost,true);setFocusSurface(workspace,true);setFocusSurface(addRail,true);setFocusSurface(bottomDock,true);
+            setFocusSurface(mainPreview,true);setFocusSurface(stage,true);setFocusSurface(settingsHost,true);setFocusSurface(addRail,true);setFocusSurface(bottomDock,true);
             if(auto *top=findChild<QWidget*>("TopBar")){top->setStyleSheet("QWidget#TopBar,QWidget#HeaderActions,QLabel#HeaderLogo,QToolButton,QPushButton{background:transparent;border:none;color:#ffffff;}");setFocusSurface(top->findChild<QWidget*>("HeaderActions"),true);setFocusSurface(top->findChild<QWidget*>("HeaderLogo"),true);setFocusLogoWhite(top,true);for(auto *control:top->findChildren<QAbstractButton*>()){control->show();control->raise();}}
             if(preview&&focusShell&&!preview->property("focusPreviewAttached").toBool()){
                 const QRect startRect(normalPreviewHost?QRect(normalPreviewHost->mapTo(focusShell,QPoint{}),preview->size()):focusShell->rect());
@@ -209,11 +208,9 @@ void MainWindow::buildPowerFeatures(){
                 if(!control->property("focusIconStyleSaved").toBool()){control->setProperty("focusIconStyleSaved",true);control->setProperty("focusIconStyle",control->styleSheet());}
                 control->setStyleSheet("QToolButton{background:transparent;border:1px solid transparent;border-radius:20px;color:#ffffff;} QToolButton:hover{background:transparent;border:1px solid #ffffff;} QToolButton:checked{background:transparent;border:2px solid #eb4790;}");
             }
-            const int focusRailHeight=qMax(52,(toolRail?toolRail->height():0)+(tabCarousel?tabCarousel->height():0)+(subRail?subRail->height():0));
-            if(settingsHost)settingsHost->setFixedHeight(focusRailHeight);
+            if(settingsHost){settingsHost->setMinimumHeight(0);settingsHost->setMaximumHeight(320);settingsHost->show();}
             if(bottomDock)bottomDock->show();
             if(stage){stage->setMinimumHeight(0);stage->setMaximumHeight(QWIDGETSIZE_MAX);}
-            if(workspace)workspace->setSizes({qMax(300,workspace->height()-focusRailHeight),focusRailHeight});
             // The live canvas stays lowest.  Header actions and tool glyphs
             // float over it without bringing back a panel background.
             if(auto *top=findChild<QWidget*>("TopBar")){top->show();top->raise();for(auto *control:top->findChildren<QAbstractButton*>()){control->show();control->raise();}}
@@ -233,7 +230,7 @@ void MainWindow::buildPowerFeatures(){
             if(tabs)tabs->setVisible(tabsWereVisible);
             if(addRail)addRail->show();
             setFocusSurface(findChild<QWidget*>("TopBar"),false);
-            setFocusSurface(mainPreview,false);setFocusSurface(stage,false);setFocusSurface(settingsHost,false);setFocusSurface(workspace,false);setFocusSurface(addRail,false);setFocusSurface(bottomDock,false);
+            setFocusSurface(mainPreview,false);setFocusSurface(stage,false);setFocusSurface(settingsHost,false);setFocusSurface(addRail,false);setFocusSurface(bottomDock,false);
             if(auto *top=findChild<QWidget*>("TopBar")){top->setStyleSheet({});setFocusSurface(top->findChild<QWidget*>("HeaderActions"),false);setFocusSurface(top->findChild<QWidget*>("HeaderLogo"),false);setFocusLogoWhite(top,false);}
             if(toolRail&&toolRail->property("focusRailStyleSaved").toBool()){toolRail->setStyleSheet(toolRail->property("focusRailStyle").toString());toolRail->setProperty("focusRailStyleSaved",false);if(auto *fade=toolRail->findChild<QWidget*>("MainToolRailLeftFade"))fade->show();if(auto *fade=toolRail->findChild<QWidget*>("MainToolRailRightFade"))fade->show();}
             for(auto *slider:findChildren<QSlider*>("SafeZoneSlider"))if(slider->property("focusSliderStyleSaved").toBool()){
@@ -250,15 +247,14 @@ void MainWindow::buildPowerFeatures(){
                 preview->setParent(normalPreviewHost);
                 if(auto *normalLayout=normalPreviewHost->layout();normalLayout&&normalLayout->indexOf(preview)<0)normalLayout->addWidget(preview);
                 preview->show();
-                preview->setFixedHeight(VideoProcessor::isVideo(currentFile)?qBound(190,height()-640,360):360);
+                preview->setMinimumHeight(0);preview->setMaximumHeight(QWIDGETSIZE_MAX);
             }
             if(bottomDock)bottomDock->show();
-            const int restoredHeight=tabsWereVisible?300:110;
-            settingsHost->setFixedHeight(restoredHeight);
-            if(stage){stage->setMinimumHeight(240);stage->setMaximumHeight(QWIDGETSIZE_MAX);}
-            if(workspace)workspace->setSizes({qMax(240,workspace->height()-restoredHeight),restoredHeight});
+            settingsHost->setMinimumHeight(0);settingsHost->setMaximumHeight(320);
+            settingsHost->setVisible(settingsHost->property("settingsOpen").toBool());
+            if(stage){stage->setMinimumHeight(0);stage->setMaximumHeight(QWIDGETSIZE_MAX);}
         }
-        const QList<QWidget*> surfaces{bottomDock,tabCarousel,toolRail,subRail,findChild<QWidget*>("TopBar"),stage,mainPreview,settingsHost,workspace};
+        const QList<QWidget*> surfaces{bottomDock,tabCarousel,toolRail,subRail,findChild<QWidget*>("TopBar"),stage,mainPreview,settingsHost};
         for(auto *surface:surfaces)if(surface){surface->setProperty("immersivePreview",immersive);surface->style()->unpolish(surface);surface->style()->polish(surface);surface->update();}
         if(settingsHost){settingsHost->setProperty("immersivePreview",immersive);settingsHost->style()->unpolish(settingsHost);settingsHost->style()->polish(settingsHost);settingsHost->update();}
         if(auto *top=findChild<QWidget*>("TopBar"))for(const auto &name:{QString("HeaderActions"),QString("HeaderLogo")})if(auto *surface=top->findChild<QWidget*>(name)){surface->setProperty("immersivePreview",immersive);surface->style()->unpolish(surface);surface->style()->polish(surface);surface->update();}

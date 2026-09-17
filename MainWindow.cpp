@@ -569,8 +569,7 @@ void MainWindow::buildUi(){
             // =================================================================
             // CUSTOM DRILL-DOWN LAYER CARD OVERRIDE
             // =================================================================
-            if (tabs->currentIndex() == 0 && name == "Layer") {
-                // 1. TOP SECTION: Blend, Locks, & Sliders
+            if (name == "Layer") {
                 auto *layerTopLayout = new QVBoxLayout;
                 layerTopLayout->setSpacing(2);
 
@@ -609,7 +608,7 @@ void MainWindow::buildUi(){
 
                 settingCardLayout->addLayout(layerTopLayout);
 
-                // 2. MIDDLE SECTION: Drill-Down List & Breadcrumbs
+                // Middle Section: Drill-Down List & Breadcrumbs
                 auto *listSection = new QVBoxLayout;
                 listSection->setSpacing(2);
                 listSection->setContentsMargins(0, 6, 0, 0);
@@ -626,7 +625,7 @@ void MainWindow::buildUi(){
                 
                 breadcrumbRow->addWidget(backBtn);
                 breadcrumbRow->addWidget(levelLabel, 1);
-                breadcrumbRow->addSpacing(48); // Balances the back button for true centering
+                breadcrumbRow->addSpacing(48);
                 listSection->addLayout(breadcrumbRow);
 
                 auto *layerList = new QListWidget;
@@ -638,7 +637,7 @@ void MainWindow::buildUi(){
                 
                 settingCardLayout->addLayout(listSection, 1);
 
-                // 3. BOTTOM SECTION: Action Bar
+                // Bottom Section: Action Bar
                 auto *actionBar = new QHBoxLayout;
                 actionBar->setSpacing(8);
                 actionBar->setContentsMargins(0, 6, 0, 0);
@@ -658,7 +657,7 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionBar);
 
-                // DRILL-DOWN NAVIGATION SIGNALS
+                // Drill-Down Signals
                 auto populateRoot = [layerList, backBtn, levelLabel, blendModeCombo]() {
                     layerList->clear();
                     for (int i = 1; i <= 3; ++i) {
@@ -690,46 +689,41 @@ void MainWindow::buildUi(){
                 });
 
                 QObject::connect(backBtn, &QToolButton::clicked, populateRoot);
-
                 populateRoot();
 
                 settingCard->show();
                 tabs->hide();
-                settingsHost->setMinimumHeight(qMin(320, settingsHost->layout()->sizeHint().height()));
-                settingsHost->updateGeometry();
-                if(auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
-                    outer->invalidate(); outer->activate();
+            }
+            // =================================================================
+            // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS
+            // =================================================================
+            else {
+                QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());
+                if(!target||!tabs->isAncestorOf(target)){
+                    const auto controls=tabs->currentWidget()->findChildren<QSlider*>();
+                    target=controls.value(index%qMax(1,controls.size()),nullptr);
                 }
-                return;
+                if(target){
+                    auto *slider=new GradientSlider;
+                    slider->setRange(target->minimum(),target->maximum());
+                    slider->setValue(target->value());
+                    slider->setTitle(name);
+                    slider->setIcon(settingIcon(name));
+                    slider->setToolTip(target->toolTip());
+                    slider->setObjectName("ActiveSettingSlider");
+                    slider->setFixedHeight(48);
+                    settingCardLayout->addWidget(slider,1);
+                    connect(slider,&QSlider::valueChanged,target,&QSlider::setValue);
+                    connect(target,&QSlider::valueChanged,slider,[slider](int v){QSignalBlocker block(slider);slider->setValue(v);});
+                    settingCard->show();
+                    tabs->hide();
+                    slider->setFocus(Qt::OtherFocusReason);
+                }else{
+                    settingCard->hide();
+                    tabs->show();
+                }
             }
 
-            // =================================================================
-            // STANDARD SLIDER CARD FALLBACK
-            // =================================================================
-            QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());
-            if(!target||!tabs->isAncestorOf(target)){
-                const auto controls=tabs->currentWidget()->findChildren<QSlider*>();
-                target=controls.value(index%qMax(1,controls.size()),nullptr);
-            }
-            if(target){
-                auto *slider=new GradientSlider;
-                slider->setRange(target->minimum(),target->maximum());
-                slider->setValue(target->value());
-                slider->setTitle(name);
-                slider->setIcon(settingIcon(name));
-                slider->setToolTip(target->toolTip());
-                slider->setObjectName("ActiveSettingSlider");
-                slider->setFixedHeight(48);
-                settingCardLayout->addWidget(slider,1);
-                connect(slider,&QSlider::valueChanged,target,&QSlider::setValue);
-                connect(target,&QSlider::valueChanged,slider,[slider](int v){QSignalBlocker block(slider);slider->setValue(v);});
-                settingCard->show();
-                tabs->hide();
-                slider->setFocus(Qt::OtherFocusReason);
-            }else{
-                settingCard->hide();
-                tabs->show();
-            }
             settingsHost->setMinimumHeight(qMin(320,settingsHost->layout()->sizeHint().height()));
             settingsHost->updateGeometry();
             if(auto *outer=qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())){outer->invalidate();outer->activate();}

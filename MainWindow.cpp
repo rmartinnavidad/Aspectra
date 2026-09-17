@@ -545,7 +545,7 @@ void MainWindow::buildUi(){
     preview->setMinimumHeight(0);
     preview->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
     settingsHost->setMinimumHeight(0);
-    settingsHost->setMaximumHeight(320);
+    settingsHost->setMaximumHeight(420);
     settingsHost->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Maximum);
     tabs->hide();
     settingsHost->hide();
@@ -670,7 +670,7 @@ void MainWindow::buildUi(){
 
                 auto *layerList = new QListWidget;
                 layerList->setObjectName("DrillDownLayerList");
-                layerList->setMinimumHeight(140);
+                layerList->setMinimumHeight(120);
                 layerList->setSelectionMode(QAbstractItemView::SingleSelection);
                 layerList->setStyleSheet("QListWidget { background: #0b0e15; border-radius: 8px; border: 1px solid #1a202c; padding: 4px; } QListWidget::item { height: 38px; border-bottom: 1px solid #161a22; } QListWidget::item:selected { background: #1a202c; border: 1px solid #3ddcff; border-radius: 6px; }");
                 listSection->addWidget(layerList, 1);
@@ -697,44 +697,134 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionBar);
 
-                // Drill-Down Signals
-                auto populateRoot = [layerList, backBtn, levelLabel, blendModeCombo]() {
+                // The existing canvas layers are the artboards; timeline tracks are
+                // the editable children of the active composition. No sample rows.
+                auto activeArtboard=std::make_shared<QString>();
+                auto populateRoot=[this,layerList,backBtn,levelLabel,blendModeCombo,activeArtboard]{
+                    *activeArtboard={};
                     layerList->clear();
-                    for (int i = 1; i <= 3; ++i) {
-                        auto *item = new QListWidgetItem(QString("  📁  Artboard %1").arg(i));
-                        item->setData(Qt::UserRole, "folder");
-                        layerList->addItem(item);
+                    QStringList paths=this->batch.files;
+                    if(!currentFile.isEmpty()&&!paths.contains(currentFile))paths.append(currentFile);
+                    for(auto it=canvasLayers.cbegin();it!=canvasLayers.cend();++it)
+                        if(!paths.contains(it.key()))paths.append(it.key());
+                    for(const QString &path:paths){
+                        if(!canvasLayers.contains(path))continue;
+                        const auto &layer=canvasLayers[path];
+                        auto *item=new QListWidgetItem(layer.name.isEmpty()?QFileInfo(path).completeBaseName():layer.name,layerList);
+                        item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+                        item->setData(Qt::UserRole,"folder");
+                        item->setData(Qt::UserRole+1,path);
                     }
                     backBtn->hide();
                     levelLabel->setText("Artboards");
                     blendModeCombo->setCurrentText("Pass Through");
                 };
-
-                auto populateChildren = [layerList, backBtn, levelLabel, blendModeCombo](const QString& parentName) {
+                auto populateChildren=[this,layerList,backBtn,levelLabel,blendModeCombo,activeArtboard](const QString &source){
+                    if(!canvasLayers.contains(source))return;
+                    *activeArtboard=source;
                     layerList->clear();
-                    for (int i = 1; i <= 4; ++i) {
-                        auto *item = new QListWidgetItem(QString("  🖼️  Layer %1").arg(i));
-                        item->setData(Qt::UserRole, "layer");
-                        layerList->addItem(item);
+                    const auto &base=canvasLayers[source];
+                    auto *baseItem=new QListWidgetItem(base.name.isEmpty()?QStringLiteral("Canvas"):base.name,layerList);
+                    baseItem->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+                    baseItem->setData(Qt::UserRole,"base");
+                    baseItem->setData(Qt::UserRole+1,source);
+                    if(source==currentFile){
+                        for(int i=0;i<timelineTracks.size();++i){
+                            const auto &track=timelineTracks[i];
+                            auto *item=new QListWidgetItem(track.name.isEmpty()?QStringLiteral("Layer %1").arg(i+1):track.name,layerList);
+                            item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+                            item->setData(Qt::UserRole,"track");
+                            item->setData(Qt::UserRole+2,i);
+                        }
                     }
                     backBtn->show();
-                    levelLabel->setText(parentName.mid(5));
+                    levelLabel->setText(base.name.isEmpty()?QStringLiteral("Artboard"):base.name);
                     blendModeCombo->setCurrentText("Normal");
                 };
-
-                QObject::connect(layerList, &QListWidget::itemDoubleClicked, [populateChildren](QListWidgetItem *item) {
-                    if (item->data(Qt::UserRole).toString() == "folder") {
-                        populateChildren(item->text());
+                connect(layerList,&QListWidget::itemDoubleClicked,this,[populateChildren](QListWidgetItem *item){
+                    if(item&&item->data(Qt::UserRole).toString()=="folder")populateChildren(item->data(Qt::UserRole+1).toString());
+                });
+                connect(backBtn,&QToolButton::clicked,this,populateRoot);
+                connect(layerList,&QListWidget::currentItemChanged,this,[this,blendModeCombo,opacitySlider,fillSlider,lockAll](QListWidgetItem *item){
+                    if(!item)return;
+                    QSignalBlocker blendBlock(blendModeCombo),opacityBlock(opacitySlider),fillBlock(fillSlider),lockBlock(lockAll);
+                    const QString kind=item->data(Qt::UserRole).toString();
+                    if(kind=="track"){
+                        const int i=item->data(Qt::UserRole+2).toInt();
+                        if(i<0||i>=timelineTracks.size())return;
+                        const auto &track=timelineTracks[i];
+                        blendModeCombo->setCurrentText(track.blendMode);
+                        opacitySlider->setValue(qRound(track.opacity*100));
+                        fillSlider->setValue(qRound(track.fill*100));
+                        lockAll->setChecked(track.locked);
+                    }else if(kind=="base"){
+                        const auto &layer=canvasLayers.value(item->data(Qt::UserRole+1).toString());
+                        blendModeCombo->setCurrentText(layer.blendMode);
+                        opacitySlider->setValue(qRound(layer.opacity*100));
+                        fillSlider->setValue(qRound(layer.fill*100));
+                    }else{
+                        blendModeCombo->setCurrentText("Pass Through");
+                        opacitySlider->setValue(100);
+                        fillSlider->setValue(100);
                     }
                 });
-
-                QObject::connect(backBtn, &QToolButton::clicked, populateRoot);
+                auto selectedTrack=[this,layerList]()->int{
+                    auto *item=layerList->currentItem();
+                    if(!item||item->data(Qt::UserRole).toString()!="track")return -1;
+                    const int i=item->data(Qt::UserRole+2).toInt();
+                    return i>=0&&i<timelineTracks.size()?i:-1;
+                };
+                connect(blendModeCombo,&QComboBox::currentTextChanged,this,[this,selectedTrack,layerList](const QString &mode){
+                    const int i=selectedTrack();
+                    if(i>=0)timelineTracks[i].blendMode=mode;
+                    else if(auto *item=layerList->currentItem();item&&item->data(Qt::UserRole).toString()=="base")canvasLayers[item->data(Qt::UserRole+1).toString()].blendMode=mode;
+                    refresh();
+                });
+                auto updateLayerValue=[this,selectedTrack,layerList](bool opacity,int value){
+                    const int i=selectedTrack();
+                    if(i>=0){if(opacity)timelineTracks[i].opacity=value/100.;else timelineTracks[i].fill=value/100.;}
+                    else if(auto *item=layerList->currentItem();item&&item->data(Qt::UserRole).toString()=="base"){
+                        auto &layer=canvasLayers[item->data(Qt::UserRole+1).toString()];
+                        if(opacity)layer.opacity=value/100.;else layer.fill=value/100.;
+                    }
+                    refresh();
+                };
+                connect(opacitySlider,&QSlider::valueChanged,this,[updateLayerValue](int v){updateLayerValue(true,v);});
+                connect(fillSlider,&QSlider::valueChanged,this,[updateLayerValue](int v){updateLayerValue(false,v);});
+                connect(lockAll,&QToolButton::toggled,this,[this,selectedTrack](bool locked){const int i=selectedTrack();if(i>=0){timelineTracks[i].locked=locked;updateTrackPanel();}});
+                connect(addLayerBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren]{
+                    if(activeArtboard->isEmpty()||*activeArtboard!=currentFile||original.isNull())return;
+                    TimelineTrack track;track.type=TimelineTrack::Image;track.name=QStringLiteral("Layer %1").arg(timelineTracks.size()+1);
+                    track.image=QImage(original.size(),QImage::Format_ARGB32);track.image.fill(Qt::transparent);
+                    track.start=0;track.end=qMax(5.,media.duration);timelineTracks.append(track);
+                    updateTrackPanel();refresh();populateChildren(*activeArtboard);
+                });
+                connect(deleteBtn,&QToolButton::clicked,this,[this,selectedTrack,activeArtboard,populateChildren]{
+                    const int i=selectedTrack();if(i<0)return;
+                    timelineTracks.removeAt(i);updateTrackPanel();refresh();populateChildren(*activeArtboard);
+                });
+                connect(addMaskBtn,&QToolButton::clicked,this,[this,activeArtboard]{
+                    if(*activeArtboard!=currentFile||original.isNull())return;
+                    auto &mask=canvasLayers[currentFile].mask;
+                    if(mask.isNull()){mask=QImage(original.size(),QImage::Format_Grayscale8);mask.fill(255);}
+                    preview->setLayerMask(mask);status->setText("Layer mask ready for painting");
+                });
+                connect(addAdjBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren]{
+                    if(*activeArtboard!=currentFile)return;
+                    TimelineTrack track;track.type=TimelineTrack::Effect;track.name="Adjustments";track.start=0;track.end=qMax(5.,media.duration);
+                    timelineTracks.append(track);updateTrackPanel();populateChildren(*activeArtboard);
+                });
+                connect(addGroupBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren]{
+                    if(*activeArtboard!=currentFile)return;
+                    TimelineTrack track;track.type=TimelineTrack::Effect;track.name="Group";track.start=0;track.end=qMax(5.,media.duration);
+                    timelineTracks.append(track);updateTrackPanel();populateChildren(*activeArtboard);
+                });
                 populateRoot();
 
                 settingCard->show();
                 tabs->hide();
 
-                settingsHost->setMinimumHeight(qMin(320,settingsHost->layout()->sizeHint().height()));
+                settingsHost->setMinimumHeight(qMin(420,settingsHost->layout()->sizeHint().height()));
                 settingsHost->updateGeometry();
                 if(auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
                     outer->invalidate(); outer->activate();

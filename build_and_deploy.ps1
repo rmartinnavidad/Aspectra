@@ -61,7 +61,8 @@ Copy-Item -LiteralPath $source -Destination $target -Force
 & $deploy --release --compiler-runtime --force --no-translations $target
 
 Write-Host "`n[6/6] Launching Aspectra X & Synchronizing Git..." -ForegroundColor Cyan
-Start-Process -FilePath "$target"
+# Explicit WorkingDirectory ensures Qt DLLs are located and prevents silent background crashes
+Start-Process -FilePath $target -WorkingDirectory $targetDir
 Write-Host "   -> Aspectra X launched asynchronously." -ForegroundColor Green
 
 Write-Host "   -> Running live Git Sync..." -ForegroundColor DarkGray

@@ -702,7 +702,7 @@ void MainWindow::buildUi(){
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
-                railWidget->setFixedHeight(80);
+                railWidget->setFixedHeight(96);
                 railWidget->setDragEnabled(true);
                 railWidget->setAcceptDrops(true);
                 railWidget->setDropIndicatorShown(true);

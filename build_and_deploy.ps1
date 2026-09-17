@@ -37,7 +37,9 @@ Copy-Item -LiteralPath $source -Destination $target -Force
 & $deploy --release --compiler-runtime --force --no-translations $target
 
 Write-Host "[5/5] Re-launching Aspectra X & triggering background git sync..." -ForegroundColor Green
-Start-Process -FilePath $target -WorkingDirectory $targetDir
+
+# Use the direct call operator (&) to force the app to open
+& $target
 
 # Fire-and-forget headless git background sync
 Start-Job -ScriptBlock {
@@ -51,4 +53,4 @@ Start-Job -ScriptBlock {
     }
 } | Out-Null
 
-Write-Host "Pipeline complete. App is reopened, live, and syncing!" -ForegroundColor Green
+Write-Host "Pipeline complete. App is live and syncing!" -ForegroundColor Green

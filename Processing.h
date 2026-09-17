@@ -43,7 +43,7 @@ struct TimelineKeyframe {
 struct TimelineTrack {
     enum Type { Video, Audio, Image, Text, Effect };
     Type type=Text;
-    QString name,text,source,blendMode{"Normal"},transition{"Fade"};
+    QString name,text,source,blendMode{"Normal"},transition{"Fade"},groupId;
     QImage image;
     QColor color{Qt::white};
     QPointF position{24,56},scale{1,1};
@@ -54,7 +54,7 @@ struct TimelineTrack {
     double letterSpacing=0.,lineSpacing=100.,kerning=0.,verticalScale=100.,horizontalScale=100.,baseline=0.,highlightWidth=0.,sharpness=100.;
     bool fontBold=true,fontItalic=false,allCaps=false,smallCaps=false,superscript=false,subscript=false,underline=false,textStroke=false;
     bool standardLigature=true,contextualAlternates=true,discretionaryLigature=false,swash=false,stylisticAlternates=false,tiltingAlternates=false,ordinals=false,fractions=false;
-    bool enabled=true,locked=false,muted=false,lockPixels=false,lockPosition=false;
+    bool enabled=true,locked=false,muted=false,lockPixels=false,lockPosition=false,isGroup=false;
     QVector<TimelineKeyframe> keyframes;
 };
 struct MediaInfo {

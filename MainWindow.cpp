@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QSaveFile>
 #include <QDateTime>
+#include <QUuid>
 #include <QTimer>
 #include <QVideoFrame>
 #ifdef Q_OS_WIN
@@ -731,8 +732,9 @@ void MainWindow::buildUi(){
                     if(source==currentFile){
                         for(int i=0;i<timelineTracks.size();++i){
                             const auto &track=timelineTracks[i];
-                            auto *item=new QListWidgetItem(track.name.isEmpty()?QStringLiteral("Layer %1").arg(i+1):track.name,layerList);
-                            item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+                            const QString title=track.name.isEmpty()?QStringLiteral("Layer %1").arg(i+1):track.name;
+                            auto *item=new QListWidgetItem((track.isGroup?QStringLiteral("▾  "):(track.groupId.isEmpty()?QString():QStringLiteral("    ")))+title,layerList);
+                            item->setIcon(style()->standardIcon(track.isGroup?QStyle::SP_DirIcon:QStyle::SP_FileIcon));
                             item->setData(Qt::UserRole,"track");
                             item->setData(Qt::UserRole+2,i);
                         }
@@ -745,9 +747,9 @@ void MainWindow::buildUi(){
                     if(item&&item->data(Qt::UserRole).toString()=="folder")populateChildren(item->data(Qt::UserRole+1).toString());
                 });
                 connect(backBtn,&QToolButton::clicked,this,populateRoot);
-                connect(layerList,&QListWidget::currentItemChanged,this,[this,blendModeCombo,opacitySlider,fillSlider,lockAll](QListWidgetItem *item){
+                connect(layerList,&QListWidget::currentItemChanged,this,[this,blendModeCombo,opacitySlider,fillSlider,lockPixels,lockPosition,lockAll](QListWidgetItem *item){
                     if(!item)return;
-                    QSignalBlocker blendBlock(blendModeCombo),opacityBlock(opacitySlider),fillBlock(fillSlider),lockBlock(lockAll);
+                    QSignalBlocker blendBlock(blendModeCombo),opacityBlock(opacitySlider),fillBlock(fillSlider),pixelBlock(lockPixels),positionBlock(lockPosition),lockBlock(lockAll);
                     const QString kind=item->data(Qt::UserRole).toString();
                     if(kind=="track"){
                         const int i=item->data(Qt::UserRole+2).toInt();
@@ -756,16 +758,24 @@ void MainWindow::buildUi(){
                         blendModeCombo->setCurrentText(track.blendMode);
                         opacitySlider->setValue(qRound(track.opacity*100));
                         fillSlider->setValue(qRound(track.fill*100));
+                        lockPixels->setChecked(track.lockPixels);
+                        lockPosition->setChecked(track.lockPosition);
                         lockAll->setChecked(track.locked);
                     }else if(kind=="base"){
                         const auto &layer=canvasLayers.value(item->data(Qt::UserRole+1).toString());
                         blendModeCombo->setCurrentText(layer.blendMode);
                         opacitySlider->setValue(qRound(layer.opacity*100));
                         fillSlider->setValue(qRound(layer.fill*100));
+                        lockPixels->setChecked(layer.lockPixels);
+                        lockPosition->setChecked(layer.lockPosition);
+                        lockAll->setChecked(layer.lockAll);
                     }else{
                         blendModeCombo->setCurrentText("Pass Through");
                         opacitySlider->setValue(100);
                         fillSlider->setValue(100);
+                        lockPixels->setChecked(false);
+                        lockPosition->setChecked(false);
+                        lockAll->setChecked(false);
                     }
                 });
                 auto selectedTrack=[this,layerList]()->int{
@@ -791,16 +801,35 @@ void MainWindow::buildUi(){
                 };
                 connect(opacitySlider,&QSlider::valueChanged,this,[updateLayerValue](int v){updateLayerValue(true,v);});
                 connect(fillSlider,&QSlider::valueChanged,this,[updateLayerValue](int v){updateLayerValue(false,v);});
-                connect(lockAll,&QToolButton::toggled,this,[this,selectedTrack](bool locked){const int i=selectedTrack();if(i>=0){timelineTracks[i].locked=locked;updateTrackPanel();}});
-                connect(addLayerBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren]{
+                auto setLock=[this,selectedTrack,layerList](int kind,bool locked){
+                    const int i=selectedTrack();
+                    if(i>=0){
+                        auto &track=timelineTracks[i];
+                        if(kind==0)track.lockPixels=locked;else if(kind==1)track.lockPosition=locked;else track.locked=locked;
+                        updateTrackPanel();
+                    }else if(auto *item=layerList->currentItem();item&&item->data(Qt::UserRole).toString()=="base"){
+                        auto &layer=canvasLayers[item->data(Qt::UserRole+1).toString()];
+                        if(kind==0)layer.lockPixels=locked;else if(kind==1)layer.lockPosition=locked;else layer.lockAll=locked;
+                    }
+                };
+                connect(lockPixels,&QToolButton::toggled,this,[setLock](bool v){setLock(0,v);});
+                connect(lockPosition,&QToolButton::toggled,this,[setLock](bool v){setLock(1,v);});
+                connect(lockAll,&QToolButton::toggled,this,[setLock](bool v){setLock(2,v);});
+                connect(addLayerBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren,selectedTrack]{
                     if(activeArtboard->isEmpty()||*activeArtboard!=currentFile||original.isNull())return;
                     TimelineTrack track;track.type=TimelineTrack::Image;track.name=QStringLiteral("Layer %1").arg(timelineTracks.size()+1);
                     track.image=QImage(original.size(),QImage::Format_ARGB32);track.image.fill(Qt::transparent);
                     track.start=0;track.end=qMax(5.,media.duration);timelineTracks.append(track);
+                    const int selected=selectedTrack();
+                    if(selected>=0)timelineTracks.last().groupId=timelineTracks[selected].groupId;
                     updateTrackPanel();refresh();populateChildren(*activeArtboard);
                 });
                 connect(deleteBtn,&QToolButton::clicked,this,[this,selectedTrack,activeArtboard,populateChildren]{
                     const int i=selectedTrack();if(i<0)return;
+                    if(timelineTracks[i].isGroup){
+                        const QString id=timelineTracks[i].groupId;
+                        for(auto &track:timelineTracks)if(!track.isGroup&&track.groupId==id)track.groupId.clear();
+                    }
                     timelineTracks.removeAt(i);updateTrackPanel();refresh();populateChildren(*activeArtboard);
                 });
                 connect(addMaskBtn,&QToolButton::clicked,this,[this,activeArtboard]{
@@ -814,10 +843,15 @@ void MainWindow::buildUi(){
                     TimelineTrack track;track.type=TimelineTrack::Effect;track.name="Adjustments";track.start=0;track.end=qMax(5.,media.duration);
                     timelineTracks.append(track);updateTrackPanel();populateChildren(*activeArtboard);
                 });
-                connect(addGroupBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren]{
+                connect(addGroupBtn,&QToolButton::clicked,this,[this,activeArtboard,populateChildren,selectedTrack]{
                     if(*activeArtboard!=currentFile)return;
-                    TimelineTrack track;track.type=TimelineTrack::Effect;track.name="Group";track.start=0;track.end=qMax(5.,media.duration);
-                    timelineTracks.append(track);updateTrackPanel();populateChildren(*activeArtboard);
+                    const int selected=selectedTrack();
+                    TimelineTrack group;group.type=TimelineTrack::Effect;group.name="Group";group.isGroup=true;
+                    group.groupId=QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    group.start=0;group.end=qMax(5.,media.duration);
+                    if(selected>=0){timelineTracks.insert(selected,group);timelineTracks[selected+1].groupId=group.groupId;}
+                    else timelineTracks.append(group);
+                    updateTrackPanel();populateChildren(*activeArtboard);
                 });
                 populateRoot();
 
@@ -1150,7 +1184,23 @@ void MainWindow::refresh(){
     if(!previewVariant||styleChecks.size()<7)return;
     if(!applyingLayerOverride&&perImageOverride&&perImageOverride->isChecked()&&!currentFile.isEmpty()&&canvasLayers.contains(currentFile)){canvasLayers[currentFile].hasOverride=true;canvasLayers[currentFile].overrideAdjustments=adjustments();}
     if(sliders["blacks"]->value()>=sliders["whites"]->value())sliders["whites"]->setValue(sliders["blacks"]->value()+1);
-    zoomValue->setText(QString::number(zoom->value())+"%");if(!currentFile.isEmpty()&&!original.isNull()){QImage composed=original;if(canvasLayers.contains(currentFile)){const auto &layer=canvasLayers[currentFile];if(layer.position!=QPointF()){QImage canvas(QSize(widthInput->value(),heightInput->value()),QImage::Format_ARGB32);canvas.fill(Qt::transparent);QPainter painter(&canvas);painter.drawImage(layer.position,original);composed=canvas;}}preview->setFrame(compositeTimelineTracks(composed));}int variant=previewVariant->currentIndex();preview->setAdjustments(adjustments(),QSize(widthInput->value(),heightInput->value()),variant?&presets[variant-1]:nullptr);
+    zoomValue->setText(QString::number(zoom->value())+"%");
+    if(!currentFile.isEmpty()&&!original.isNull()){
+        QImage composed=original;
+        if(canvasLayers.contains(currentFile)){
+            const auto &layer=canvasLayers[currentFile];
+            if(!layer.visible||layer.opacity<1.||layer.fill<1.||layer.position!=QPointF()){
+                QImage canvas(QSize(widthInput->value(),heightInput->value()),QImage::Format_ARGB32);
+                canvas.fill(Qt::transparent);
+                QPainter painter(&canvas);
+                painter.setOpacity(layer.visible?std::clamp(layer.opacity*layer.fill,0.,1.):0.);
+                painter.drawImage(layer.position,original);
+                composed=canvas;
+            }
+        }
+        preview->setFrame(compositeTimelineTracks(composed));
+    }
+    int variant=previewVariant->currentIndex();preview->setAdjustments(adjustments(),QSize(widthInput->value(),heightInput->value()),variant?&presets[variant-1]:nullptr);
     if(tabs&&tabs->currentIndex()==6&&!original.isNull()&&textureMapPreview&&!textureBgw.isEmpty())textureRefreshTimer.start();else if(tabs&&tabs->currentIndex()==7&&!original.isNull()){preview->setTextureSphereInteractive(false);updatePatternPreview();}else{preview->setTextureSphereInteractive(false);preview->clearTextureFrame();}
     preview->setGuides(guides->isChecked(),normalizedMargins(safeInputs));
 }

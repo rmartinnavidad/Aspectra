@@ -697,7 +697,7 @@ void MainWindow::buildUi(){
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail (Locked to 240px width)
+                // Page 0: Horizontal Artboard Rail (240px width per user spec)
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
@@ -816,6 +816,7 @@ void MainWindow::buildUi(){
                     bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
                     bool hasMask = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].mask.isNull();
                     QString baseName = sourcePath.isEmpty() ? "Canvas" : (canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() ? canvasLayers[sourcePath].name : QFileInfo(sourcePath).completeBaseName());
+                    
                     auto *baseWidget = createLayerRow(baseName, baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
                         if (canvasLayers.contains(sourcePath)) {
                             canvasLayers[sourcePath].visible = visible;
@@ -862,7 +863,7 @@ void MainWindow::buildUi(){
                 populateRail();
 
                 // =============================================================
-                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Robust & Fully Functional)
+                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Context-Aware)
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
                 actionRow->setSpacing(8);
@@ -884,16 +885,13 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionRow);
 
-                // --- ROBUST ACTION HANDLERS ---
-                
-                // 1. New Artboard / New Layer Button (+)
-                // --- FULLY FUNCTIONAL CONTEXT-AWARE ACTION HANDLERS ---
+                // --- ACTION HANDLERS ---
                 
                 // 1. New Artboard / New Layer Button (+)
                 QObject::connect(newLayerBtn, &QToolButton::clicked, [this, stackWidget, railWidget, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards mode: Create a new artboard, append to the right, and select it instantly
-                        QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128);
+                        // Artboard Mode: Append new artboard to the right and select it
+                        QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
                         CanvasLayer layer;
                         layer.source = artboardId;
                         layer.name = QString("Artboard %1").arg(batch.files.size() + 1);
@@ -902,10 +900,11 @@ void MainWindow::buildUi(){
                         batch.files.append(artboardId);
                         updateBatchLabel();
                         populateRail();
-                        selectFile(artboardId); // Switch active preview to the new artboard
-                        status->setText("New artboard added to the right");
+                        selectFile(artboardId);
+                        if (railWidget->count() > 0) railWidget->setCurrentRow(railWidget->count() - 1);
+                        status->setText("New artboard added");
                     } else {
-                        // Layers mode: Add a new composition track layer to the active artboard
+                        // Layer Mode: Add new track layer
                         TimelineTrack track;
                         track.type = TimelineTrack::Image;
                         track.name = QString("Layer %1").arg(timelineTracks.size() + 1);
@@ -921,10 +920,9 @@ void MainWindow::buildUi(){
                     }
                 });
 
-                // 2. Delete Button (Trash)
+                // 2. Delete Button
                 QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 1) {
-                        // In Layers View: Delete selected layer track
                         auto *selected = detailRowList->currentItem();
                         if (selected && selected->data(Qt::UserRole).toString() == "track") {
                             int idx = selected->data(Qt::UserRole + 2).toInt();
@@ -937,53 +935,43 @@ void MainWindow::buildUi(){
                             }
                         }
                     } else {
-                        // In Artboards View: Remove selected artboard from batch
                         auto *selected = railWidget->currentItem();
-                        if (!selected && railWidget->count() > 0) selected = railWidget->item(railWidget->count() - 1);
                         if (selected) {
                             QString path = selected->data(Qt::UserRole).toString();
                             if (!path.isEmpty()) {
                                 batch.files.removeOne(path);
                                 canvasLayers.remove(path);
                                 updateBatchLabel();
+                                if (currentFile == path) {
+                                    if (!batch.files.isEmpty()) selectFile(batch.files.last());
+                                    else clearMedia();
+                                }
                             }
-                            delete selected;
                             populateRail();
-                            if (!batch.files.isEmpty()) selectFile(batch.files.last());
                             status->setText("Artboard removed");
                         }
                     }
                 });
 
-                // 3. Layer Mask Button ([Mask])
-                QObject::connect(maskBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, populateLayers]() {
-                    QString targetFile = currentFile;
-                    if (stackWidget->currentIndex() == 1) {
-                        auto *selected = detailRowList->currentItem();
-                        if (selected && selected->data(Qt::UserRole).toString() == "base") {
-                            targetFile = selected->data(Qt::UserRole + 1).toString();
-                        }
-                    }
-                    if (targetFile.isEmpty() && !batch.files.isEmpty()) targetFile = batch.files.first();
-                    if (targetFile.isEmpty()) targetFile = currentFile;
-                    if (targetFile.isEmpty()) return;
-
-                    auto &layer = canvasLayers[targetFile];
+                // 3. Layer Mask Button
+                QObject::connect(maskBtn, &QToolButton::clicked, [this, stackWidget, populateLayers]() {
+                    if (currentFile.isEmpty() || original.isNull()) return;
+                    auto &layer = canvasLayers[currentFile];
                     QSize sz = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
                     layer.mask = QImage(sz, QImage::Format_Grayscale8);
                     layer.mask.fill(255);
                     preview->setLayerMask(layer.mask);
-                    if (stackWidget->currentIndex() == 1) populateLayers(targetFile);
-                    status->setText("Editable layer mask created");
+                    if (stackWidget->currentIndex() == 1) populateLayers(currentFile);
+                    status->setText("Layer mask created");
                 });
 
-                // 4. Adjustment Button ([Adj]) -> Switch to Adjust Tab
+                // 4. Adjustment Button
                 QObject::connect(adjBtn, &QToolButton::clicked, [this]() {
                     tabs->setCurrentIndex(1);
                     status->setText("Adjustments panel active");
                 });
 
-                // 5. Group / Folder Button ([Folder]) -> Add Group track
+                // 5. Group / Folder Button
                 QObject::connect(grpBtn, &QToolButton::clicked, [this, stackWidget, populateLayers]() {
                     TimelineTrack track;
                     track.type = TimelineTrack::Effect;
@@ -994,6 +982,17 @@ void MainWindow::buildUi(){
                     if (stackWidget->currentIndex() == 1 && !currentFile.isEmpty()) populateLayers(currentFile);
                     status->setText("New group folder created");
                 });
+
+                settingCard->show();
+                tabs->hide();
+                settingsHost->setMinimumHeight(qMin(340, settingsHost->layout()->sizeHint().height()));
+                settingsHost->updateGeometry();
+                if (auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
+                    outer->invalidate();
+                    outer->activate();
+                }
+                return;
+            }
 
             // =================================================================
             // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS

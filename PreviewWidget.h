@@ -75,6 +75,7 @@ private:
     QSize target{512,512};
     std::optional<RecolorPreset> recolor;
     QTimer refresh,selectionAnimation,zoomSettleRefresh;
+    QVariantAnimation artboardSlide;
     QMarginsF safeMargins{.1,.1,.1,.1};
     bool guides=true,draggingPadding=false,eyedropper=false,maskPainting=false,maskAdd=true,paintingMask=false,panning=false,toolInteracting=false;int maskSize=48,toolDiameter=48;
     CanvasTool canvasTool=CanvasTool::None;QVector<QPointF> toolPath;

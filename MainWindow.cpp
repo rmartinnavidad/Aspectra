@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QSaveFile>
 #include <QDateTime>
+#include <QImageReader>
 #include <QUuid>
 #include <QTimer>
 #include <QVideoFrame>
@@ -862,17 +863,20 @@ void MainWindow::buildUi(){
                         if (!path.isEmpty()) (*populateLayersPtr)(path);
                     }
                 });
-                QObject::connect(railWidget, &QListWidget::itemClicked, this, [this, showArtboardWorkspace](QListWidgetItem *item) {
+                QObject::connect(railWidget, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
                     const QString path = item ? item->data(Qt::UserRole).toString() : QString();
                     if (!path.isEmpty() && path != currentFile) selectFile(path);
-                    showArtboardWorkspace();
                 });
-                QObject::connect(preview, &PreviewWidget::artboardSelected, railWidget, [this, railWidget, showArtboardWorkspace](const QString &path) {
+                QObject::connect(preview, &PreviewWidget::artboardSelected, railWidget, [this, railWidget](const QString &path) {
                     if (!batch.files.contains(path)) return;
                     selectFile(path);
                     for (int i = 0; i < railWidget->count(); ++i)
                         if (railWidget->item(i)->data(Qt::UserRole).toString() == path) { railWidget->setCurrentRow(i); break; }
-                    showArtboardWorkspace();
+                });
+                QObject::connect(batchNavigator, &QSlider::valueChanged, railWidget, [this, railWidget](int index) {
+                    if (index < 0 || index >= railWidget->count()) return;
+                    railWidget->setCurrentRow(index);
+                    railWidget->scrollToItem(railWidget->item(index), QAbstractItemView::EnsureVisible);
                 });
 
                 QObject::connect(backBtn, &QToolButton::clicked, [populateRailPtr]() {
@@ -917,8 +921,8 @@ void MainWindow::buildUi(){
                         batch.files.append(artboardId);
                         updateBatchLabel();
                         
-                        selectFile(artboardId);
                         if (populateRailPtr) (*populateRailPtr)();
+                        selectFile(artboardId);
                         
                         if (railWidget->count() > 0) {
                             railWidget->setCurrentRow(railWidget->count() - 1);

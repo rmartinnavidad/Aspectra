@@ -699,8 +699,13 @@ void MainWindow::buildUi(){
 
                 // Page 0: Horizontal Artboard Rail (LOCKED to 240px width)
                 auto *railWidget = new QListWidget;
+                // Force the Artboards card to behave as one horizontal row.
+                railWidget->setViewMode(QListView::IconMode);
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
+                railWidget->setResizeMode(QListView::Adjust);
+                railWidget->setMovement(QListView::Snap);
+                railWidget->setGridSize(QSize(248, 72));
                 railWidget->setFixedHeight(96);
                 railWidget->setSpacing(8);
                 railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -861,41 +866,24 @@ void MainWindow::buildUi(){
 
                 QObject::connect(newLayerBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget, detailRowList, populateRailPtr, populateLayersPtr]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards Mode: append directly to the existing
-                        // LeftToRight artboard rail.
+                        // Artboards Mode: Create Artboard & ensure rightward appending
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
                         CanvasLayer layer;
                         layer.source = artboardId;
                         layer.name = QString("Artboard %1").arg(batch.files.size() + 1);
                         layer.nativeSize = QSize(widthInput->value(), heightInput->value());
                         canvasLayers[artboardId] = layer;
-
+                        
                         batch.files.append(artboardId);
                         updateBatchLabel();
-
-                        // Remove the temporary placeholder before inserting the
-                        // first real artboard.
-                        if (railWidget->count() == 1) {
-                            QListWidgetItem *first = railWidget->item(0);
-                            if (first && first->data(Qt::UserRole).toString().isEmpty())
-                                delete railWidget->takeItem(0);
-                        }
-
-                        // addItem() appends to the end. railWidget is configured
-                        // LeftToRight with wrapping disabled, so this places the
-                        // new artboard directly to the RIGHT of the existing one.
-                        auto *item = new QListWidgetItem("📁 " + layer.name);
-                        item->setData(Qt::UserRole, artboardId);
-                        item->setSizeHint(QSize(240, 64));
-                        railWidget->addItem(item);
-                        railWidget->setCurrentItem(item);
-                        item->setSelected(true);
-
+                        
+                        if (populateRailPtr) (*populateRailPtr)();
                         selectFile(artboardId);
-
-                        // Ensure the newly appended artboard is visible.
-                        railWidget->scrollToItem(item, QAbstractItemView::EnsureVisible);
-
+                        
+                        if (railWidget->count() > 0) {
+                            railWidget->setCurrentRow(railWidget->count() - 1);
+                            railWidget->scrollToItem(railWidget->item(railWidget->count() - 1), QAbstractItemView::EnsureVisible);
+                        }
                         status->setText("New artboard added");
                     } else {
                         // Layers Mode: Create timeline track owned by current artboard

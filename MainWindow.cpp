@@ -973,16 +973,11 @@ void MainWindow::buildUi(){
         panel->setToolTip(entry.second);
         panelLayout->addWidget(panel);
         
-        connect(panel,&QToolButton::clicked,this,[this,name=entry.second]{
+        connect(panel,&QToolButton::clicked,this,[this,name=entry.second,showSettings,subButtons]{
             if(name == "Layers") {
                 tabs->setCurrentIndex(0);
-                for(auto *tab : tabCarousel->findChildren<QToolButton*>("CarouselTab")) {
-                    if(tab->toolTip() == "Canvas settings") { tab->click(); break; }
-                }
-                if(auto *subRailWidget = findChild<QWidget*>("SubSettingsRail")) {
-                    auto subBtns = subRailWidget->findChildren<QToolButton*>();
-                    if(subBtns.size() > 3) { subBtns[3]->click(); }
-                }
+                showSettings();
+                QTimer::singleShot(1,this,[subButtons]{if(auto *layer=subButtons->button(3))layer->click();});
             } else {
                 const QString target = name=="Color"||name=="Adjustments" ? "Adjust" : "Canvas";
                 for(auto *tab : tabCarousel->findChildren<QToolButton*>("CarouselTab"))

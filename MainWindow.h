@@ -13,7 +13,37 @@
 #include "ModernUi.h"
 class AspectraGalleryScreen;
 struct LoadedMedia { QImage image;MediaInfo info;QString error;quint64 serial=0;QVector<int> gifTimes; };
-struct CanvasLayer { QString source,name,text,blendMode{"Normal"};QPointF position{0,0},textPosition{20,52};QSize nativeSize;QColor textColor{Qt::white};int textSize=32;double opacity=1.,fill=1.;bool visible=true,textVisible=false,hasOverride=false,lockPixels=false,lockPosition=false,lockAll=false;Adjustments overrideAdjustments;QImage mask,selection;QPointF cloneSource;bool hasCloneSource=false; };
+struct CanvasLayer {
+    QString source, name, text, blendMode{"Normal"};
+
+    // Position of CONTENT inside this artboard.
+    QPointF position{0, 0};
+
+    // Position of the ARTBOARD itself in the multi-artboard workspace.
+    QPointF artboardPosition{0, 0};
+
+    QPointF textPosition{20, 52};
+    QSize nativeSize;
+    QColor textColor{Qt::white};
+
+    int textSize = 32;
+
+    double opacity = 1.;
+    double fill = 1.;
+
+    bool visible = true;
+    bool textVisible = false;
+    bool hasOverride = false;
+    bool lockPixels = false;
+    bool lockPosition = false;
+    bool lockAll = false;
+
+    Adjustments overrideAdjustments;
+    QImage mask, selection;
+
+    QPointF cloneSource;
+    bool hasCloneSource = false;
+};
 class MainWindow : public AspectraWindow {
     Q_OBJECT
     friend int runUiTests(MainWindow &);

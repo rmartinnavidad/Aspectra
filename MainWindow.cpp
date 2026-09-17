@@ -821,17 +821,36 @@ void MainWindow::buildUi(){
     panelLayout->setContentsMargins(0,0,0,0);
     panelLayout->setSpacing(10);
     panelLayout->addStretch();
-    for(const auto &entry:QList<QPair<QString,QString>>{{"icon_color_.png","Color"},{"horizontal type tool.png","Character"},{"panel settings.png","Properties"},{"editor_adjustments.png","Adjustments"}}){
+
+    for(const auto &entry:QList<QPair<QString,QString>>{
+        {"shape layer.png", "Layers"},
+        {"icon_color_.png", "Color"},
+        {"horizontal type tool.png", "Character"},
+        {"panel settings.png", "Properties"},
+        {"editor_adjustments.png", "Adjustments"}
+    }){
         auto *panel=new FluidToolButton(panelRail);
         panel->setIcon(whiteIcon(panelIconRoot+entry.first));
         panel->setIconSize(QSize(19,19));
         panel->setFixedSize(38,38);
         panel->setToolTip(entry.second);
         panelLayout->addWidget(panel);
+        
         connect(panel,&QToolButton::clicked,this,[this,name=entry.second]{
-            const QString target=name=="Color"||name=="Adjustments"?"Adjust":name=="Character"?"Canvas":"Canvas";
-            for(auto *tab:tabCarousel->findChildren<QToolButton*>("CarouselTab"))
-                if(tab->toolTip()==target+" settings"){tab->click();break;}
+            if(name == "Layers") {
+                tabs->setCurrentIndex(0);
+                for(auto *tab : tabCarousel->findChildren<QToolButton*>("CarouselTab")) {
+                    if(tab->toolTip() == "Canvas settings") { tab->click(); break; }
+                }
+                if(auto *subRailWidget = findChild<QWidget*>("SubSettingsRail")) {
+                    auto subBtns = subRailWidget->findChildren<QToolButton*>();
+                    if(subBtns.size() > 3) { subBtns[3]->click(); }
+                }
+            } else {
+                const QString target = name=="Color"||name=="Adjustments" ? "Adjust" : "Canvas";
+                for(auto *tab : tabCarousel->findChildren<QToolButton*>("CarouselTab"))
+                    if(tab->toolTip() == target + " settings") { tab->click(); break; }
+            }
         });
     }
     panelLayout->addStretch();

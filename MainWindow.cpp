@@ -709,6 +709,14 @@ void MainWindow::buildUi(){
                 layerList->setFixedHeight(76);
                 layerList->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
                 layerList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                
+                // --- ADD THESE FOUR LINES TO ENABLE DRAG-AND-DROP REORDERING ---
+                layerList->setDragEnabled(true);
+                layerList->setAcceptDrops(true);
+                layerList->setDropIndicatorShown(true);
+                layerList->setDragDropMode(QAbstractItemView::InternalMove);
+                // -------------------------------------------------------------
+
                 layerList->setStyleSheet(
                     "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 4px; }"
                     "QListWidget::item { width: 88px; height: 62px; background: #12151c; border: 1px solid #242936; border-radius: 6px; margin-right: 6px; color: #e0e4ee; font-size: 10px; font-weight: 600; padding: 4px; }"

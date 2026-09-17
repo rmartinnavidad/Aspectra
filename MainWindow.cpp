@@ -645,7 +645,7 @@ void MainWindow::buildUi(){
                 row1->addWidget(blendCombo);
                 topLayout->addLayout(row1);
 
-                auto createGradientSliderRow = [](const QString &title, int defaultVal) {
+                auto createGradientSliderRow = [](const QString &title, int defaultVal, GradientSlider **output) {
                     auto *sliderRow = new QHBoxLayout;
                     sliderRow->setSpacing(8);
                     auto *lbl = new QLabel(title);
@@ -656,6 +656,7 @@ void MainWindow::buildUi(){
                     slider->setRange(0, 100);
                     slider->setValue(defaultVal);
                     slider->setFixedHeight(22);
+                    *output = slider;
 
                     auto *valLbl = new QLabel(QString::number(defaultVal) + "%");
                     valLbl->setFixedWidth(34);
@@ -672,8 +673,9 @@ void MainWindow::buildUi(){
                     return sliderRow;
                 };
 
-                topLayout->addLayout(createGradientSliderRow("Opacity", 100));
-                topLayout->addLayout(createGradientSliderRow("Fill", 100));
+                GradientSlider *opacitySlider = nullptr, *fillSlider = nullptr;
+                topLayout->addLayout(createGradientSliderRow("Opacity", 100, &opacitySlider));
+                topLayout->addLayout(createGradientSliderRow("Fill", 100, &fillSlider));
                 settingCardLayout->addWidget(topContainer);
 
                 // =============================================================
@@ -730,6 +732,32 @@ void MainWindow::buildUi(){
                     "QListWidget::item:selected { background: #101015; border: 1px solid #3ddcff; border-radius: 6px; }"
                 );
                 stackWidget->addWidget(detailRowList);
+                auto selectedTrack = [this, stackWidget, detailRowList]() -> int {
+                    if (stackWidget->currentIndex() != 1 || !detailRowList->currentItem() || detailRowList->currentItem()->data(Qt::UserRole).toString() != "track") return -1;
+                    const int index = detailRowList->currentItem()->data(Qt::UserRole + 2).toInt();
+                    return index >= 0 && index < timelineTracks.size() ? index : -1;
+                };
+                auto syncLayerControls = [this, selectedTrack, blendCombo, opacitySlider, fillSlider, lockPixels, lockPos, lockAll]() {
+                    const int index = selectedTrack();
+                    const CanvasLayer layer = canvasLayers.value(currentFile);
+                    const bool trackSelected = index >= 0;
+                    const QString blend = trackSelected ? timelineTracks[index].blendMode : layer.blendMode;
+                    QSignalBlocker blendBlock(blendCombo), opacityBlock(opacitySlider), fillBlock(fillSlider);
+                    QSignalBlocker pixelsBlock(lockPixels), posBlock(lockPos), allBlock(lockAll);
+                    blendCombo->setCurrentText(blend.isEmpty() ? (trackSelected ? "Normal" : "Pass Through") : blend);
+                    opacitySlider->setValue(qRound((trackSelected ? timelineTracks[index].opacity : layer.opacity) * 100));
+                    fillSlider->setValue(qRound((trackSelected ? timelineTracks[index].fill : layer.fill) * 100));
+                    lockPixels->setChecked(trackSelected ? timelineTracks[index].lockPixels : layer.lockPixels);
+                    lockPos->setChecked(trackSelected ? timelineTracks[index].lockPosition : layer.lockPosition);
+                    lockAll->setChecked(trackSelected ? timelineTracks[index].locked : layer.lockAll);
+                };
+                QObject::connect(detailRowList, &QListWidget::currentItemChanged, detailRowList, [syncLayerControls](QListWidgetItem *, QListWidgetItem *) { syncLayerControls(); });
+                QObject::connect(blendCombo, &QComboBox::currentTextChanged, detailRowList, [this, selectedTrack](const QString &value) { const int i=selectedTrack(); if(i>=0)timelineTracks[i].blendMode=value;else if(canvasLayers.contains(currentFile))canvasLayers[currentFile].blendMode=value;refresh(); });
+                QObject::connect(opacitySlider, &QSlider::valueChanged, detailRowList, [this, selectedTrack](int value) { const int i=selectedTrack(); if(i>=0)timelineTracks[i].opacity=value/100.;else if(canvasLayers.contains(currentFile))canvasLayers[currentFile].opacity=value/100.;refresh(); });
+                QObject::connect(fillSlider, &QSlider::valueChanged, detailRowList, [this, selectedTrack](int value) { const int i=selectedTrack(); if(i>=0)timelineTracks[i].fill=value/100.;else if(canvasLayers.contains(currentFile))canvasLayers[currentFile].fill=value/100.;refresh(); });
+                QObject::connect(lockPixels, &QToolButton::toggled, detailRowList, [this, selectedTrack](bool value) { const int i=selectedTrack(); if(i>=0)timelineTracks[i].lockPixels=value;else if(canvasLayers.contains(currentFile))canvasLayers[currentFile].lockPixels=value; });
+                QObject::connect(lockPos, &QToolButton::toggled, detailRowList, [this, selectedTrack](bool value) { const int i=selectedTrack(); if(i>=0)timelineTracks[i].lockPosition=value;else if(canvasLayers.contains(currentFile))canvasLayers[currentFile].lockPosition=value; });
+                QObject::connect(lockAll, &QToolButton::toggled, detailRowList, [this, selectedTrack](bool value) { const int i=selectedTrack(); if(i>=0)timelineTracks[i].locked=value;else if(canvasLayers.contains(currentFile))canvasLayers[currentFile].lockAll=value; });
 
                 // --- Shared Lambdas using shared_ptr to safely break scope dead-ends ---
                 auto populateRailPtr = std::make_shared<std::function<void()>>();
@@ -761,7 +789,7 @@ void MainWindow::buildUi(){
                     else preview->clearArtboards();
                 };
 
-                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace]() {
+                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls]() {
                     railWidget->clear();
                     
                     if (batch.files.isEmpty()) {
@@ -788,10 +816,11 @@ void MainWindow::buildUi(){
                     backBtn->hide();
                     crumbLabel->setText("Artboards");
                     blendCombo->setCurrentText("Pass Through");
+                    syncLayerControls();
                     showArtboardWorkspace();
                 };
 
-                *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
+                *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, syncLayerControls](const QString &sourcePath) {
                     if (sourcePath.isEmpty()) return;
                     if (sourcePath != currentFile) selectFile(sourcePath);
                     detailRowList->clear();
@@ -855,6 +884,8 @@ void MainWindow::buildUi(){
                     backBtn->show();
                     crumbLabel->setText("Artboards / " + baseName);
                     blendCombo->setCurrentText("Normal");
+                    detailRowList->setCurrentRow(0);
+                    syncLayerControls();
                 };
 
                 QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayersPtr](QListWidgetItem *item) {
@@ -1038,6 +1069,7 @@ void MainWindow::buildUi(){
             // =================================================================
             // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS
             // =================================================================
+            preview->clearArtboards();
             clearLayoutItems(settingCardLayout);
             QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());
             if(!target||!tabs->isAncestorOf(target)){

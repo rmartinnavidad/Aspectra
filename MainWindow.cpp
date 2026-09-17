@@ -886,9 +886,12 @@ void MainWindow::buildUi(){
                 // --- ROBUST ACTION HANDLERS ---
                 
                 // 1. New Artboard / New Layer Button (+)
+                // --- FULLY FUNCTIONAL CONTEXT-AWARE ACTION HANDLERS ---
+                
+                // 1. New Artboard / New Layer Button (+)
                 QObject::connect(newLayerBtn, &QToolButton::clicked, [this, stackWidget, railWidget, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards mode: Append a brand new artboard right next to existing ones without wiping state
+                        // Artboards mode: Create a new artboard, append to the right, and select it instantly
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128);
                         CanvasLayer layer;
                         layer.source = artboardId;
@@ -898,9 +901,10 @@ void MainWindow::buildUi(){
                         batch.files.append(artboardId);
                         updateBatchLabel();
                         populateRail();
-                        status->setText("New artboard appended");
+                        selectFile(artboardId); // Switch active preview to the new artboard
+                        status->setText("New artboard added to the right");
                     } else {
-                        // Layers mode: Add a new composition track layer
+                        // Layers mode: Add a new composition track layer to the active artboard
                         TimelineTrack track;
                         track.type = TimelineTrack::Image;
                         track.name = QString("Layer %1").arg(timelineTracks.size() + 1);
@@ -916,19 +920,23 @@ void MainWindow::buildUi(){
                     }
                 });
 
-                // 2. Delete Button (Trash) - Falls back safely if nothing is selected
-                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail]() {
+                // 2. Delete Button (Trash)
+                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 1) {
+                        // In Layers View: Delete selected layer track
                         auto *selected = detailRowList->currentItem();
-                        int idx = selected ? selected->data(Qt::UserRole + 2).toInt() : (timelineTracks.size() - 1);
-                        if (idx >= 0 && idx < timelineTracks.size()) {
-                            timelineTracks.removeAt(idx);
-                            updateTrackPanel();
-                            refresh();
-                            if (!currentFile.isEmpty()) populateLayers(currentFile);
-                            status->setText("Layer deleted");
+                        if (selected && selected->data(Qt::UserRole).toString() == "track") {
+                            int idx = selected->data(Qt::UserRole + 2).toInt();
+                            if (idx >= 0 && idx < timelineTracks.size()) {
+                                timelineTracks.removeAt(idx);
+                                updateTrackPanel();
+                                refresh();
+                                populateLayers(currentFile);
+                                status->setText("Layer deleted");
+                            }
                         }
                     } else {
+                        // In Artboards View: Remove selected artboard from batch
                         auto *selected = railWidget->currentItem();
                         if (!selected && railWidget->count() > 0) selected = railWidget->item(railWidget->count() - 1);
                         if (selected) {
@@ -940,6 +948,7 @@ void MainWindow::buildUi(){
                             }
                             delete selected;
                             populateRail();
+                            if (!batch.files.isEmpty()) selectFile(batch.files.last());
                             status->setText("Artboard removed");
                         }
                     }
@@ -984,17 +993,6 @@ void MainWindow::buildUi(){
                     if (stackWidget->currentIndex() == 1 && !currentFile.isEmpty()) populateLayers(currentFile);
                     status->setText("New group folder created");
                 });
-
-                settingCard->show();
-                tabs->hide();
-                settingsHost->setMinimumHeight(qMin(340, settingsHost->layout()->sizeHint().height()));
-                settingsHost->updateGeometry();
-                if (auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
-                    outer->invalidate();
-                    outer->activate();
-                }
-                return;
-            }
 
             // =================================================================
             // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS

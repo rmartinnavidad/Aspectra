@@ -1,4 +1,10 @@
-=== CMake configure === 
-'cmake' is not recognized as an internal or external command,
-operable program or batch file.
-=== finished, status file written === 
+=== CMake configure ===
+& : The term 'cmake' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the 
+spelling of the name, or if a path was included, verify that the path is correct and try again.
+At C:\Users\rmart\Documents\Codex\2026-09-06\ki\outputs\Aspectra\build_and_deploy.ps1:40 char:7
++     & cmake `
++       ~~~~~
+    + CategoryInfo          : ObjectNotFound: (cmake:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+

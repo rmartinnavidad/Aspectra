@@ -45,6 +45,36 @@ int runUiTests(MainWindow &w){
         w.paddingInputs[0]->setValue(15);w.paddingInputs[2]->setValue(15);w.sliders["saturation"]->setValue(0);spin(100);auto image=w.preview->rendered();QColor pixel=image.pixelColor(image.width()/2,image.height()/2);require(pixel.red()==pixel.green()&&pixel.green()==pixel.blue(),"Color controls did not update live");require(qAlpha(image.pixel(0,0))==0,"Live padding failed");
         w.styleChecks["overlay"]->setChecked(true);w.layerStyle.overlayColor=Qt::green;w.layerStyle.effectOpacity=1;w.refresh();spin(100);pixel=w.preview->rendered().pixelColor(image.width()/2,image.height()/2);require(pixel.green()==255&&pixel.red()==0,"Live style controls failed");report<<"PASS: previous/next navigation, live color, padding and style controls";
         w.marginUnits->setCurrentIndex(1);w.paddingInputs[0]->setValue(12);w.safeInputs[0]->setValue(10);const double expectedPadding=12./w.widthInput->value();require(qAbs(w.adjustments().padding.left()-expectedPadding)<.0001,"Pixel padding did not normalize to the output canvas");w.marginUnits->setCurrentIndex(0);report<<"PASS: safe and red guide regions stay canvas-relative in pixel and percent units";
+        {
+            auto *safeSlider=w.findChild<QSlider*>("SafeZoneSlider");
+            require(safeSlider&&safeSlider->isVisible(),"Safe-zone slider missing");
+            auto sendSafeMouse=[&](QEvent::Type type,qreal fraction){
+                const QPointF local(safeSlider->width()/2.0,8+(safeSlider->height()-16)*fraction);
+                const QPointF global=safeSlider->mapToGlobal(local.toPoint());
+                if(type==QEvent::MouseButtonPress)
+                    require(w.childAt(w.mapFromGlobal(global.toPoint()))==safeSlider,"Preview intercepts safe-zone slider clicks");
+                QMouseEvent event(type,local,global,type==QEvent::MouseMove?Qt::NoButton:Qt::LeftButton,
+                                  type==QEvent::MouseButtonRelease?Qt::NoButton:Qt::LeftButton,Qt::NoModifier);
+                QCoreApplication::sendEvent(safeSlider,&event);
+            };
+            w.guides->setChecked(false);
+            sendSafeMouse(QEvent::MouseButtonPress,.8);
+            sendSafeMouse(QEvent::MouseMove,.3);
+            sendSafeMouse(QEvent::MouseButtonRelease,.3);
+            require(safeSlider->value()==32,"Safe-zone drag did not reach the expected value");
+            for(auto *input:w.safeInputs)require(qAbs(input->value()-32)<.01,"Safe-zone drag did not update all edges");
+            require(w.guides->isChecked(),"Safe-zone drag did not reveal guides");
+            w.marginUnits->setCurrentIndex(1);
+            sendSafeMouse(QEvent::MouseButtonPress,.7);
+            sendSafeMouse(QEvent::MouseMove,.5);
+            sendSafeMouse(QEvent::MouseButtonRelease,.5);
+            const QMarginsF margins=w.normalizedMargins(w.safeInputs);
+            for(double margin:{margins.left(),margins.top(),margins.right(),margins.bottom()})
+                require(qAbs(margin-safeSlider->value()/100.0)<.002,"Safe-zone slider used pixels instead of percentages");
+            w.marginUnits->setCurrentIndex(0);
+            safeSlider->setValue(10);
+            report<<"PASS: safe-zone pointer hit, drag, all four margins, guide visibility and pixel-unit conversion";
+        }
         TimelineTrack text;text.type=TimelineTrack::Text;text.name="Title";text.text="Title";text.start=0;text.end=1;w.timelineTracks<<text;w.updateTrackPanel();w.trackList->setCurrentRow(w.timelineTracks.size()-1);spin(30);require(w.timelineTracks.last().text=="Title","Text layer data was lost");report<<"PASS: text-layer data remains without a bottom card";
         const int beforePlacedText=w.timelineTracks.size();w.preview->setCanvasTool(CanvasTool::Type);const QPoint textPoint=w.preview->rect().center();QMouseEvent textPress(QEvent::MouseButtonPress,QPointF(textPoint),QPointF(w.preview->mapToGlobal(textPoint)),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);QMouseEvent textRelease(QEvent::MouseButtonRelease,QPointF(textPoint),QPointF(w.preview->mapToGlobal(textPoint)),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(w.preview,&textPress);QCoreApplication::sendEvent(w.preview,&textRelease);spin(30);require(w.timelineTracks.size()==beforePlacedText+1&&w.timelineTracks.last().type==TimelineTrack::Text&&w.trackList->currentRow()==w.timelineTracks.size()-1,"Type tool click did not place and select text");report<<"PASS: Type tool places and selects text at the preview click";
         w.tabs->setCurrentIndex(3);spin(10);w.tracePreviewActive=true;w.pendingTraceSvg="<svg/>";w.pendingTraceColors=5;w.preview->setVectorTraceFrame(QImage(12,12,QImage::Format_ARGB32));w.tabs->setCurrentIndex(0);spin(15);require(!w.tracePreviewActive&&w.pendingTraceSvg.isEmpty()&&w.pendingTraceColors==0,"Leaving Trace did not clear the preview state");report<<"PASS: leaving Trace clears yellow trace-preview state";

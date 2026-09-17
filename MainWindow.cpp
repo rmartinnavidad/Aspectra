@@ -392,8 +392,6 @@ QToolButton#CarouselTab:hover {background:#111114;border:2px solid #ffffff;}
 QToolButton#CarouselTab:checked {background:#000000;border:2px solid #7a4dff;}
 QListWidget#BatchStrip::item,QListWidget#BatchStrip::item:selected {background:#000000;color:#ffffff;}
 QListWidget#BatchStrip::item:selected {border:1px solid #3ddcff;}
-QSplitter#PreviewSettingsSplit::handle:vertical {height:12px;background:#000000;border:none;}
-QSplitter#PreviewSettingsSplit::handle:vertical:hover {background:#000000;border:none;}
 QLabel#SliderValue {min-width:26px;min-height:26px;max-width:42px;max-height:42px;background:#ffffff;color:#000000;border-radius:13px;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 3px;}
 QWidget#SettingsHost,QScrollArea#TabsCarousel,QScrollArea#SubSettingsRail,QWidget#ActiveSettingCard,QTabWidget#SettingsScrollArea::pane {background:#000000;border:none;}
 QToolButton#SubRailIcon {background:#000000;color:#ffffff;border:1px solid #ffffff;border-radius:19px;font-size:10px;font-weight:700;padding:0;}
@@ -500,9 +498,8 @@ void MainWindow::buildUi(){
     // Locked portrait composition: the viewer is the dominant, centered
     // surface and the rails sit tightly beneath it without a framed card.
     mainPreview->setMinimumHeight(0);mainPreview->setStyleSheet("background:transparent;border:none;");preview->setStyleSheet("background:transparent;border:none;");
-    // Keep a dependable minimum for the square preview while the splitter owns
-    // the remaining available space.
-    stageHost->setMinimumHeight(240);
+    // The preview consumes the space left after rails and settings are laid out.
+    stageHost->setMinimumHeight(0);
     connect(preview,&PreviewWidget::marginsDragged,this,[this](QMarginsF safe,QMarginsF padding){double sv[]{safe.left(),safe.top(),safe.right(),safe.bottom()},pv[]{padding.left(),padding.top(),padding.right(),padding.bottom()};for(int i=0;i<4;++i){QSignalBlocker a(safeInputs[i]),b(paddingInputs[i]);safeInputs[i]->setValue(sv[i]*100);paddingInputs[i]->setValue(pv[i]*100);}refresh();});
     auto *canvasTools=new QWidget;auto *canvasLayout=new QVBoxLayout(canvasTools);canvasLayout->setContentsMargins(12,10,12,4);canvasLayout->setSpacing(7);auto *viewRow=row(canvasLayout,7);viewRow->addWidget(label("PREVIEW ZOOM","muted"));auto *previewZoom=new GradientSlider;previewZoom->setRange(25,1600);previewZoom->setValue(100);previewZoom->setToolTip("Magnifies only the preview viewport. It does not alter crop, output dimensions, or exported pixels.");viewRow->addWidget(previewZoom,1);auto *previewZoomValue=label("100%");previewZoomValue->setFixedWidth(35);viewRow->addWidget(previewZoomValue);connect(previewZoom,&QSlider::valueChanged,this,[this,previewZoomValue](int value){preview->setViewZoom(value/100.);previewZoomValue->setText(QString::number(value)+"%");});
     auto *zoomRow=row(canvasLayout,7);zoomRow->addWidget(label("CROP SCALE","muted"));zoom=new GradientSlider;zoom->setRange(100,400);zoom->setValue(100);zoom->setToolTip("Scales the source inside the output crop. This is separate from Preview Zoom.");zoomRow->addWidget(zoom,1);zoomValue=label("100%");zoomValue->setFixedWidth(35);zoomRow->addWidget(zoomValue);connect(zoom,&QSlider::valueChanged,this,&MainWindow::refresh);

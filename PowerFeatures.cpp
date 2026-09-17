@@ -291,10 +291,10 @@ void MainWindow::mediaContext(){
     if(fpsLimit)fpsLimit->setEnabled(hasVideos);if(paletteSize)paletteSize->setEnabled(hasVideos);if(!motion&&tabs->currentIndex()==5)tabs->setCurrentIndex(0);
 }
 void MainWindow::routeMode(int id){
-    stopPlayback();captureRow->setVisible(id==2);if(id==2){videoRow->hide();preview->setFixedHeight(220);tabs->setCurrentIndex(0);return;}
+    stopPlayback();captureRow->setVisible(id==2);if(id==2){videoRow->hide();preview->setMinimumHeight(0);preview->setMaximumHeight(QWIDGETSIZE_MAX);tabs->setCurrentIndex(0);return;}
     auto matches=[&](QString path){return id==1?(compositionMode||VideoProcessor::isVideo(path)&&!isGif(path)):!VideoProcessor::isVideo(path)||isGif(path);};
     if(!matches(currentFile)||currentFile.isEmpty()){for(auto path:batch.files)if(matches(path)){selectFile(path);break;}}
-    if(id==1){mediaContext();tabs->setTabVisible(5,true);videoRow->show();preview->setFixedHeight(qBound(190,height()-640,360));if(!VideoProcessor::isVideo(currentFile)&&!compositionMode)status->setText("Import a video or open an image in the compositor.");}else{mediaContext();tabs->setCurrentIndex(0);}
+    if(id==1){mediaContext();tabs->setTabVisible(5,true);videoRow->show();preview->setMinimumHeight(0);preview->setMaximumHeight(QWIDGETSIZE_MAX);if(!VideoProcessor::isVideo(currentFile)&&!compositionMode)status->setText("Import a video or open an image in the compositor.");}else{mediaContext();tabs->setCurrentIndex(0);}
 }
 void MainWindow::fullScreenPlayer(){
     if(original.isNull())return;if(fullscreen){fullscreen->raise();return;}fullscreen=new QDialog(this);fullscreen->setAttribute(Qt::WA_DeleteOnClose);fullscreen->setWindowTitle("Aspectra · Full screen");auto *v=new QVBoxLayout(fullscreen);v->setContentsMargins(0,0,0,0);fullPreview=new PreviewWidget;fullPreview->setMinimumHeight(1);fullPreview->setMaximumHeight(QWIDGETSIZE_MAX);fullPreview->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);fullPreview->setGuides(false,{});v->addWidget(fullPreview,1);auto *bar=line(v);auto *play=action("Play / Pause",bar,"blue"),*exit=action("Exit full screen · Esc",bar);connect(play,&QPushButton::clicked,this,&MainWindow::togglePlayback);connect(exit,&QPushButton::clicked,fullscreen,&QDialog::close);connect(fullPreview,&PreviewWidget::fullScreenRequested,fullscreen,&QDialog::close);connect(fullscreen,&QDialog::finished,this,[this]{fullPreview=nullptr;fullscreen=nullptr;});fullPreview->setFrame(original);refresh();fullscreen->showFullScreen();

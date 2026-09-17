@@ -91,19 +91,6 @@ int runUiTests(MainWindow &w){
 }
 int runFocusZoomTest(MainWindow &w){
     QStringList report;
-    class MouseTrace final : public QObject {
-    public:
-        QStringList events;
-        bool eventFilter(QObject *object,QEvent *event) override {
-            if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseMove||event->type()==QEvent::MouseButtonRelease){
-                auto *mouse=static_cast<QMouseEvent*>(event);
-                events<<QString("%1:%2 @%3,%4 global%5,%6 buttons%7").arg(object->objectName()).arg(int(event->type())).arg(mouse->position().x()).arg(mouse->position().y()).arg(mouse->globalPosition().x()).arg(mouse->globalPosition().y()).arg(int(mouse->buttons()));
-                if(events.size()>18)events.removeFirst();
-            }
-            return false;
-        }
-    } mouseTrace;
-    qApp->installEventFilter(&mouseTrace);
     try{
         QTemporaryDir temp;QImage source(120,80,QImage::Format_ARGB32);source.fill(Qt::red);require(source.save(temp.filePath("focus.png")),"Focus fixture failed");
         w.loadFiles({temp.filePath("focus.png")});QElapsedTimer timer;timer.start();while(w.loading&&timer.elapsed()<15000)spin(10);require(!w.loading,"Focus fixture load timed out");spin(120);require(w.widthInput->value()==120&&w.heightInput->value()==80,"Imported media dimensions did not become the canvas dimensions");
@@ -118,12 +105,14 @@ int runFocusZoomTest(MainWindow &w){
         const QRectF afterPan=w.preview->displayedFrameRect();require(afterPan.center().x()>beforePan.center().x()+20&&afterPan.center().y()>beforePan.center().y()+12,"Focus canvas drag did not pan the live image");
         QWidget hitTestOverlay(shell);hitTestOverlay.setGeometry(shell->rect().adjusted(100,180,-100,-180));hitTestOverlay.show();const QRectF beforeOverlayPan=w.preview->displayedFrameRect();const QPoint overlayStart=hitTestOverlay.rect().center(),overlayEnd=overlayStart+QPoint(32,20);
         QMouseEvent overlayPress(QEvent::MouseButtonPress,QPointF(overlayStart),QPointF(hitTestOverlay.mapToGlobal(overlayStart)),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+        QCoreApplication::sendEvent(&hitTestOverlay,&overlayPress);
         QMouseEvent overlayMove(QEvent::MouseMove,QPointF(overlayEnd),QPointF(hitTestOverlay.mapToGlobal(overlayEnd)),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+        QCoreApplication::sendEvent(&hitTestOverlay,&overlayMove);
         QMouseEvent overlayRelease(QEvent::MouseButtonRelease,QPointF(overlayEnd),QPointF(hitTestOverlay.mapToGlobal(overlayEnd)),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
-        QCoreApplication::sendEvent(&hitTestOverlay,&overlayPress);QCoreApplication::sendEvent(&hitTestOverlay,&overlayMove);QCoreApplication::sendEvent(&hitTestOverlay,&overlayRelease);spin(30);hitTestOverlay.hide();
+        QCoreApplication::sendEvent(&hitTestOverlay,&overlayRelease);spin(30);hitTestOverlay.hide();
         const QRectF afterOverlayPan=w.preview->displayedFrameRect();require(afterOverlayPan.center().x()>beforeOverlayPan.center().x()+18&&afterOverlayPan.center().y()>beforeOverlayPan.center().y()+10,QString("Focus overlay drag delta %1,%2; zoom %3; parent %4; focus %5").arg(afterOverlayPan.center().x()-beforeOverlayPan.center().x()).arg(afterOverlayPan.center().y()-beforeOverlayPan.center().y()).arg(w.preview->viewZoomValue()).arg(w.preview->parentWidget()->objectName()).arg(QApplication::focusWidget()?QApplication::focusWidget()->objectName():QString("none")));
         const QImage focusCapture=w.grab().toImage();const QColor focusCenter=focusCapture.pixelColor(focusCapture.width()/2,focusCapture.height()/2);require(focusCenter.red()>200&&focusCenter.green()<80&&focusCenter.blue()<80,"Focus zoom image is occluded by a black panel surface");focusCapture.save(QDir::current().filePath("focus-zoom-test.png"));
         w.preview->setViewZoom(16.0);spin(30);const QPoint wheelPoint=w.preview->rect().center();for(int step=0;step<16;++step){QWheelEvent touchpadWheel(QPointF(wheelPoint),QPointF(w.preview->mapToGlobal(wheelPoint)),QPoint(0,-15),QPoint(),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);QCoreApplication::sendEvent(w.preview,&touchpadWheel);}spin(100);require(w.preview->parentWidget()&&w.preview->parentWidget()->objectName()=="MainPreview","Touchpad zoom-out did not restore the normal canvas");report<<"PASS: focus canvas fills the app, pans live, supports touchpad zoom-out, and returns to canvas";
-    }catch(const std::exception &e){report<<"FAIL: "+QString::fromUtf8(e.what());report<<mouseTrace.events.join(", ");}
+    }catch(const std::exception &e){report<<"FAIL: "+QString::fromUtf8(e.what());}
     QFile file(QDir::current().filePath("focus-zoom-test-result.txt"));if(file.open(QIODevice::WriteOnly))file.write(report.join('\n').toUtf8());return report.value(0).startsWith("PASS")?0:1;
 }

@@ -681,7 +681,7 @@ void MainWindow::buildUi(){
                 settingCardLayout->addWidget(topContainer);
 
                 // =============================================================
-                // 2. MIDDLE SECTION: DRILL-DOWN NAVIGATION & VIEW SWITCHER
+                // 2. MIDDLE SECTION: NAVIGATION & VIEW SWITCHER
                 // =============================================================
                 auto *navRow = new QHBoxLayout;
                 navRow->setSpacing(4);
@@ -718,7 +718,7 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(railWidget);
 
-                // Page 1: Vertical List for Groups and Layers (Drill-down Levels)
+                // Page 1: Vertical List for Real Project Layers
                 auto *detailRowList = new QListWidget;
                 detailRowList->setStyleSheet(
                     "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 2px; }"
@@ -727,17 +727,10 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(detailRowList);
 
-                // Navigation State tracking: 0 = Artboards Rail, 1 = Groups View, 2 = Layers View
-                auto currentViewLevel = std::make_shared<int>(0);
-                auto activeArtboardName = std::make_shared<QString>();
-                auto activeGroupName = std::make_shared<QString>();
-
                 std::function<void()> populateRail;
-                std::function<void(const QString&)> populateGroups;
                 std::function<void(const QString&)> populateLayers;
 
-                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, currentViewLevel]() {
-                    *currentViewLevel = 0;
+                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
                     railWidget->clear();
                     QStringList paths = this->batch.files;
                     if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.append(currentFile);
@@ -746,7 +739,7 @@ void MainWindow::buildUi(){
 
                     if (paths.isEmpty()) {
                         auto *item = new QListWidgetItem("📁 Artboard 1");
-                        item->setData(Qt::UserRole, QString("Artboard 1"));
+                        item->setData(Qt::UserRole, QString());
                         railWidget->addItem(item);
                     } else {
                         for (const QString &path : paths) {
@@ -763,31 +756,9 @@ void MainWindow::buildUi(){
                     blendCombo->setCurrentText("Pass Through");
                 };
 
-                populateGroups = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, currentViewLevel, activeArtboardName](const QString &artboardName) {
-                    *currentViewLevel = 1;
-                    *activeArtboardName = artboardName;
+                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
                     detailRowList->clear();
 
-                    // Sample groups inside the artboard
-                    QStringList groupNames = {"Background Group", "Character Group", "Effects Group"};
-                    for (const QString &gName : groupNames) {
-                        auto *item = new QListWidgetItem("📂 " + gName + "  >");
-                        item->setData(Qt::UserRole, gName);
-                        detailRowList->addItem(item);
-                    }
-
-                    stackWidget->setCurrentIndex(1);
-                    backBtn->show();
-                    crumbLabel->setText("Artboards / " + artboardName);
-                    blendCombo->setCurrentText("Pass Through");
-                };
-
-                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, currentViewLevel, activeArtboardName, activeGroupName](const QString &groupName) {
-                    *currentViewLevel = 2;
-                    *activeGroupName = groupName;
-                    detailRowList->clear();
-
-                    // Helper for interactive custom layer row widgets with visibility toggle
                     auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
                         auto *rowItemWidget = new QWidget;
                         auto *rowLayout = new QHBoxLayout(rowItemWidget);
@@ -843,50 +814,55 @@ void MainWindow::buildUi(){
                         return rowItemWidget;
                     };
 
-                    // Add layers for this group
-                    QStringList layerNames = {"Base Fill", "Primary Artwork", "Highlight Mask"};
-                    for (int i = 0; i < layerNames.size(); ++i) {
-                        auto *item = new QListWidgetItem(detailRowList);
-                        item->setSizeHint(QSize(0, 38));
-                        auto *layerWidget = createLayerRow(layerNames[i], true, i == 2, true, i == 2, [this, i](bool visible) {
-                            // Live visibility binding for layers
+                    // Add Canvas Base / Actual Image Layer
+                    auto *baseItem = new QListWidgetItem(detailRowList);
+                    baseItem->setSizeHint(QSize(0, 38));
+                    bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
+                    bool hasMask = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].mask.isNull();
+                    auto *baseWidget = createLayerRow(sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName(), baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
+                        if (canvasLayers.contains(sourcePath)) {
+                            canvasLayers[sourcePath].visible = visible;
                             refresh();
-                        });
-                        detailRowList->setItemWidget(item, layerWidget);
-                        item->setData(Qt::UserRole, "layer");
+                        }
+                    });
+                    detailRowList->setItemWidget(baseItem, baseWidget);
+                    baseItem->setData(Qt::UserRole, "base");
+                    baseItem->setData(Qt::UserRole + 1, sourcePath);
+
+                    // Add actual project timeline tracks if available
+                    if (sourcePath == currentFile) {
+                        for (int i = 0; i < timelineTracks.size(); ++i) {
+                            const auto &track = timelineTracks[i];
+                            QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
+                            auto *item = new QListWidgetItem(detailRowList);
+                            item->setSizeHint(QSize(0, 38));
+                            auto *trackWidget = createLayerRow(tName, track.enabled, false, false, false, [this, i](bool visible) {
+                                if (i >= 0 && i < timelineTracks.size()) {
+                                    timelineTracks[i].enabled = visible;
+                                    updateTrackPanel();
+                                    refresh();
+                                }
+                            });
+                            detailRowList->setItemWidget(item, trackWidget);
+                            item->setData(Qt::UserRole, "track");
+                            item->setData(Qt::UserRole + 2, i);
+                        }
                     }
 
                     stackWidget->setCurrentIndex(1);
                     backBtn->show();
-                    crumbLabel->setText(QString("Artboards / %1 / %2").arg(*activeArtboardName, groupName));
+                    crumbLabel->setText("Artboards / " + QFileInfo(sourcePath).completeBaseName());
                     blendCombo->setCurrentText("Normal");
                 };
 
-                // Rail item double-click -> Drill down to Groups
-                QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateGroups](QListWidgetItem *item) {
+                QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayers](QListWidgetItem *item) {
                     if (item) {
-                        QString name = item->text().section(' ', 1);
-                        populateGroups(name);
+                        QString path = item->data(Qt::UserRole).toString();
+                        populateLayers(path);
                     }
                 });
 
-                // Detail list double-click -> If viewing groups, drill down to layers
-                QObject::connect(detailRowList, &QListWidget::itemDoubleClicked, [currentViewLevel, populateLayers](QListWidgetItem *item) {
-                    if (item && *currentViewLevel == 1) {
-                        QString groupName = item->data(Qt::UserRole).toString();
-                        if (!groupName.isEmpty()) populateLayers(groupName);
-                    }
-                });
-
-                // Back button handler for multi-level navigation
-                QObject::connect(backBtn, &QToolButton::clicked, [currentViewLevel, populateRail, populateGroups, activeArtboardName]() {
-                    if (*currentViewLevel == 2) {
-                        populateGroups(*activeArtboardName);
-                    } else if (*currentViewLevel == 1) {
-                        populateRail();
-                    }
-                });
-
+                QObject::connect(backBtn, &QToolButton::clicked, populateRail);
                 populateRail();
 
                 // =============================================================

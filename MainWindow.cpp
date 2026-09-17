@@ -754,24 +754,85 @@ void MainWindow::buildUi(){
                     blendCombo->setCurrentText("Pass Through");
                 };
 
-                // Populate Detailed Layer Rows with Visibility Eye, Dual Thumbnails, and Badges
+                // Populate Detailed Layer Rows with Custom Photoshop-grade Widgets
                 auto populateLayerRows = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
                     detailRowList->clear();
-                    
-                    // Render actual layers associated with this artboard/source
-                    auto *baseItem = new QListWidgetItem("👁  [🖼️] [🔲]  Canvas Base   fx  🔗");
+
+                    // Helper to create a native, perfectly aligned layer row widget
+                    auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked) {
+                        auto *rowItemWidget = new QWidget;
+                        auto *rowLayout = new QHBoxLayout(rowItemWidget);
+                        rowLayout->setContentsMargins(4, 2, 4, 2);
+                        rowLayout->setSpacing(6);
+
+                        // 1. Visibility Eye Toggle Button
+                        auto *eyeBtn = new QToolButton;
+                        eyeBtn->setText(isVisible ? "👁" : "○");
+                        eyeBtn->setFixedSize(20, 20);
+                        eyeBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #3ddcff; font-size: 12px; }"
+                                              "QToolButton:hover { color: #ffffff; }");
+                        rowLayout->addWidget(eyeBtn);
+
+                        // 2. Image Thumbnail Preview Box
+                        auto *thumbLbl = new QLabel;
+                        thumbLbl->setFixedSize(24, 24);
+                        thumbLbl->setStyleSheet("background: #1c202c; border: 1px solid #323a4d; border-radius: 3px;");
+                        rowLayout->addWidget(thumbLbl);
+
+                        // 3. Layer Mask Thumbnail (if present)
+                        if (hasMask) {
+                            auto *maskLbl = new QLabel;
+                            maskLbl->setFixedSize(24, 24);
+                            maskLbl->setStyleSheet("background: #e0e4ee; border: 1px solid #323a4d; border-radius: 3px;");
+                            rowLayout->addWidget(maskLbl);
+                        }
+
+                        // 4. Editable Layer Name Label
+                        auto *nameLbl = new QLabel(layerName);
+                        nameLbl->setStyleSheet("color: #e0e4ee; font-size: 11px; font-weight: 600; background: transparent;");
+                        rowLayout->addWidget(nameLbl);
+
+                        // 5. Spacer pushing all trailing indicators (fx, link) to the far right
+                        rowLayout->addStretch(1);
+
+                        // 6. FX Badge
+                        if (hasFx) {
+                            auto *fxLbl = new QLabel("fx");
+                            fxLbl->setStyleSheet("color: #f39c12; font-size: 9px; font-weight: bold; background: #161922; border: 1px solid #4a3b1c; border-radius: 3px; padding: 1px 4px;");
+                            rowLayout->addWidget(fxLbl);
+                        }
+
+                        // 7. Chain Link Icon (Mask link state)
+                        if (isLinked) {
+                            auto *linkBtn = new QToolButton;
+                            linkBtn->setText("🔗");
+                            linkBtn->setFixedSize(20, 20);
+                            linkBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #8c99ad; font-size: 10px; }");
+                            rowLayout->addWidget(linkBtn);
+                        }
+
+                        return rowItemWidget;
+                    };
+
+                    // Add Canvas Base Item
+                    auto *baseItem = new QListWidgetItem(detailRowList);
+                    baseItem->setSizeHint(QSize(0, 38));
+                    auto *baseWidget = createLayerRow("Canvas Base", true, true, true, true);
+                    detailRowList->setItemWidget(baseItem, baseWidget);
                     baseItem->setData(Qt::UserRole, "base");
                     baseItem->setData(Qt::UserRole + 1, sourcePath);
-                    detailRowList->addItem(baseItem);
 
+                    // Add Timeline Tracks / Sub-layers if viewing current file
                     if (sourcePath == currentFile) {
                         for (int i = 0; i < timelineTracks.size(); ++i) {
                             const auto &track = timelineTracks[i];
                             QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
-                            auto *item = new QListWidgetItem(QString("👁  [🖼️] [🔲]  %1   fx  🔗").arg(tName));
+                            auto *item = new QListWidgetItem(detailRowList);
+                            item->setSizeHint(QSize(0, 38));
+                            auto *trackWidget = createLayerRow(tName, track.enabled, false, true, false);
+                            detailRowList->setItemWidget(item, trackWidget);
                             item->setData(Qt::UserRole, "track");
                             item->setData(Qt::UserRole + 2, i);
-                            detailRowList->addItem(item);
                         }
                     }
 

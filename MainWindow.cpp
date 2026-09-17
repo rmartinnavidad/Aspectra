@@ -991,6 +991,129 @@ void MainWindow::buildUi(){
                     for (const auto &track : timelineTracks) if (track.artboardSource == path) owned.append(track);
                     return ImageProcessor::compositeTimeline(image, owned, 0);
                 };
+                railWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+                QObject::connect(railWidget, &QWidget::customContextMenuRequested, railWidget,
+                    [this, railWidget, detailRowList, populateRailPtr, populateLayersPtr, createArtboardAfter, deleteArtboard, renderArtboard](const QPoint &position) {
+                    auto *item = railWidget->itemAt(position);
+                    const QString contextArtboardId = item ? item->data(Qt::UserRole).toString() : QString();
+                    if (contextArtboardId.isEmpty() || !canvasLayers.contains(contextArtboardId)) return;
+                    QMenu menu(railWidget);
+                    auto *rename = menu.addAction("Rename Artboard");
+                    auto *duplicate = menu.addAction("Duplicate Artboard");
+                    auto *remove = menu.addAction("Delete Artboard");
+                    menu.addSeparator();
+                    auto *create = menu.addAction("New Artboard to the Right");
+                    auto *moveLeft = menu.addAction("Move Artboard Left");
+                    auto *moveRight = menu.addAction("Move Artboard Right");
+                    const int index = this->batch.files.indexOf(contextArtboardId);
+                    moveLeft->setEnabled(index > 0 && !canvasLayers.value(contextArtboardId).lockPosition);
+                    moveRight->setEnabled(index >= 0 && index + 1 < this->batch.files.size() && !canvasLayers.value(contextArtboardId).lockPosition);
+                    menu.addSeparator();
+                    auto *properties = menu.addAction("Artboard Properties…");
+                    auto *selectLayers = menu.addAction("Select Layers in Artboard");
+                    auto *visible = menu.addAction(canvasLayers.value(contextArtboardId).visible ? "Hide Artboard" : "Show Artboard");
+                    auto *lockPosition = menu.addAction("Lock Artboard Position");
+                    lockPosition->setCheckable(true);lockPosition->setChecked(canvasLayers.value(contextArtboardId).lockPosition);
+                    menu.addSeparator();
+                    auto *quickExport = menu.addAction("Quick Export Artboard");
+                    auto *exportAs = menu.addAction("Export Artboard…");
+                    QAction *chosen = menu.exec(railWidget->viewport()->mapToGlobal(position));
+                    if (!chosen) return;
+                    if (chosen == rename) {
+                        bool ok = false;
+                        const QString name = QInputDialog::getText(this, "Rename Artboard", "Name", QLineEdit::Normal, canvasLayers[contextArtboardId].name, &ok).trimmed();
+                        if (ok && !name.isEmpty()) { canvasLayers[contextArtboardId].name = name;(*populateRailPtr)();autosaveProject(); }
+                    } else if (chosen == duplicate) {
+                        createArtboardAfter(contextArtboardId, true);
+                        status->setText("Artboard and its layers duplicated");
+                    } else if (chosen == remove) {
+                        if (QMessageBox::question(this, "Delete Artboard", "Delete this artboard and all its layers?") == QMessageBox::Yes) deleteArtboard(contextArtboardId);
+                    } else if (chosen == create) {
+                        createArtboardAfter(contextArtboardId, false);
+                    } else if (chosen == moveLeft || chosen == moveRight) {
+                        const int other = index + (chosen == moveLeft ? -1 : 1);
+                        if (index >= 0 && other >= 0 && other < this->batch.files.size()) {
+                            this->batch.files.swapItemsAt(index, other);updateBatchLabel();(*populateRailPtr)();autosaveProject();
+                        }
+                    } else if (chosen == properties) {
+                        QDialog dialog(this);dialog.setWindowTitle("Artboard Properties");
+                        auto *form = new QFormLayout(&dialog);
+                        auto *name = new QLineEdit(canvasLayers[contextArtboardId].name, &dialog);
+                        auto *width = new QSpinBox(&dialog), *height = new QSpinBox(&dialog);
+                        width->setRange(1, 16384);height->setRange(1, 16384);
+                        width->setValue(qMax(1, canvasLayers[contextArtboardId].nativeSize.width()));
+                        height->setValue(qMax(1, canvasLayers[contextArtboardId].nativeSize.height()));
+                        form->addRow("Name", name);form->addRow("Width", width);form->addRow("Height", height);
+                        auto *apply = new QPushButton("Apply", &dialog);form->addRow(apply);
+                        QObject::connect(apply, &QPushButton::clicked, &dialog, &QDialog::accept);
+                        if (dialog.exec() == QDialog::Accepted && !name->text().trimmed().isEmpty()) {
+                            auto &layer = canvasLayers[contextArtboardId];layer.name = name->text().trimmed();
+                            const QSize newSize(width->value(), height->value());
+                            if (newSize != layer.nativeSize && !layer.artboardImage.isNull()) {
+                                QImage resized(newSize, QImage::Format_ARGB32);resized.fill(Qt::transparent);
+                                QPainter painter(&resized);painter.drawImage(QPoint(), layer.artboardImage);layer.artboardImage = resized;
+                            }
+                            layer.nativeSize = newSize;
+                            if (contextArtboardId == currentFile) selectFile(contextArtboardId);
+                            (*populateRailPtr)();autosaveProject();
+                        }
+                    } else if (chosen == selectLayers) {
+                        (*populateLayersPtr)(contextArtboardId);
+                        detailRowList->setSelectionMode(QAbstractItemView::ExtendedSelection);detailRowList->selectAll();
+                    } else if (chosen == visible) {
+                        canvasLayers[contextArtboardId].visible = !canvasLayers[contextArtboardId].visible;
+                        if (contextArtboardId == currentFile) refresh();(*populateRailPtr)();autosaveProject();
+                    } else if (chosen == lockPosition) {
+                        canvasLayers[contextArtboardId].lockPosition = lockPosition->isChecked();autosaveProject();
+                    } else if (chosen == quickExport || chosen == exportAs) {
+                        QString fileName = canvasLayers[contextArtboardId].name;
+                        fileName.replace(QRegularExpression("[^A-Za-z0-9._-]+"), "_");
+                        const QString suggested = QDir(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)).filePath(fileName + ".png");
+                        const QString target = chosen == quickExport ? suggested : QFileDialog::getSaveFileName(this, "Export Artboard", suggested, "PNG image (*.png)");
+                        if (!target.isEmpty()) {
+                            if (!renderArtboard(contextArtboardId).save(target, "PNG")) showError("Could not export this artboard.");
+                            else status->setText("Artboard exported · " + target);
+                        }
+                    }
+                });
+                detailRowList->setContextMenuPolicy(Qt::CustomContextMenu);
+                QObject::connect(detailRowList, &QWidget::customContextMenuRequested, detailRowList,
+                    [this, detailRowList, populateLayersPtr](const QPoint &position) {
+                    auto *item = detailRowList->itemAt(position);
+                    if (!item) return;
+                    const bool trackRow = item->data(Qt::UserRole).toString() == "track";
+                    const int trackIndex = trackRow ? item->data(Qt::UserRole + 2).toInt() : -1;
+                    if (trackRow && (trackIndex < 0 || trackIndex >= timelineTracks.size())) return;
+                    const QString sourcePath = currentFile;
+                    QMenu menu(detailRowList);
+                    auto *rename = menu.addAction(trackRow ? "Rename Layer" : "Rename Artboard");
+                    QAction *duplicate = trackRow ? menu.addAction("Duplicate Layer") : nullptr;
+                    QAction *mask = !trackRow ? menu.addAction(canvasLayers.value(sourcePath).mask.isNull() ? "Add Mask" : "Alt+Click Mask to Edit") : nullptr;
+                    auto *remove = trackRow ? menu.addAction("Delete Layer") : nullptr;
+                    QAction *chosen = menu.exec(detailRowList->viewport()->mapToGlobal(position));
+                    if (!chosen) return;
+                    if (chosen == rename) {
+                        bool ok = false;
+                        const QString oldName = trackRow ? timelineTracks[trackIndex].name : canvasLayers.value(sourcePath).name;
+                        const QString name = QInputDialog::getText(this, "Rename", "Name", QLineEdit::Normal, oldName, &ok).trimmed();
+                        if (ok && !name.isEmpty()) {
+                            if (trackRow) timelineTracks[trackIndex].name = name;else canvasLayers[sourcePath].name = name;
+                            (*populateLayersPtr)(sourcePath);autosaveProject();
+                        }
+                    } else if (chosen == duplicate) {
+                        timelineTracks.insert(trackIndex + 1, timelineTracks[trackIndex]);
+                        timelineTracks[trackIndex + 1].name += " copy";
+                        updateTrackPanel();refresh();(*populateLayersPtr)(sourcePath);autosaveProject();
+                    } else if (chosen == mask) {
+                        auto &layer = canvasLayers[sourcePath];
+                        if (layer.mask.isNull()) { layer.mask = QImage(layer.nativeSize.isValid() ? layer.nativeSize : original.size(), QImage::Format_Grayscale8);layer.mask.fill(255); }
+                        preview->setLayerMask(layer.mask);preview->setMaskEditMode(true);
+                        (*populateLayersPtr)(sourcePath);
+                        status->setText("Editing mask · drag to reveal · Shift+drag to hide");
+                    } else if (chosen == remove) {
+                        timelineTracks.removeAt(trackIndex);updateTrackPanel();refresh();(*populateLayersPtr)(sourcePath);autosaveProject();
+                    }
+                });
 
                 QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayersPtr](QListWidgetItem *item) {
                     if (item && populateLayersPtr) {

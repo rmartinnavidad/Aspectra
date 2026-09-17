@@ -866,7 +866,7 @@ void MainWindow::buildUi(){
 
                     for (int i = 0; i < timelineTracks.size(); ++i) {
                         const auto &track = timelineTracks[i];
-                        if (!track.artboardSource.isEmpty() && track.artboardSource != sourcePath) continue;
+                        if (track.artboardSource != sourcePath && (sourcePath.startsWith(QLatin1String("aspectra://")) || !track.artboardSource.isEmpty())) continue;
 
                         QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
                         auto *item = new QListWidgetItem(detailRowList);
@@ -962,6 +962,7 @@ void MainWindow::buildUi(){
                         status->setText("New artboard added");
                     } else {
                         // Layers Mode: Create timeline track owned by current artboard
+                        if (currentFile.isEmpty()) return;
                         TimelineTrack track;
                         track.type = TimelineTrack::Image;
                         track.artboardSource = currentFile; 
@@ -1037,8 +1038,7 @@ void MainWindow::buildUi(){
                     canvasLayers[currentFile].hasOverride = true;
                     canvasLayers[currentFile].overrideAdjustments = adjustments();
                     if (perImageOverride) perImageOverride->setChecked(true);
-                    tabs->setCurrentIndex(1);
-                    status->setText("Adjustments active");
+                    status->setText("Artboard adjustments enabled");
                 });
 
                 QObject::connect(grpBtn, &QToolButton::clicked, this, [this, stackWidget, populateLayersPtr]() {
@@ -1790,7 +1790,7 @@ QImage MainWindow::compositeTimelineTracks(const QImage &source) const{
     QVector<TimelineTrack> visibleTracks;
     visibleTracks.reserve(timelineTracks.size());
     for (const auto &track : timelineTracks)
-        if (track.artboardSource.isEmpty() || track.artboardSource == currentFile)
+        if (track.artboardSource == currentFile || (track.artboardSource.isEmpty() && !currentFile.startsWith(QLatin1String("aspectra://"))))
             visibleTracks.append(track);
     return ImageProcessor::compositeTimeline(source,visibleTracks,time);
 }

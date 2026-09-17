@@ -561,6 +561,45 @@ void MainWindow::buildUi(){
             settingsHost->updateGeometry();
         }
     };
+    connect(tabButtons,&QButtonGroup::idClicked,this,[this,showSettings](int index){tabs->setCurrentIndex(index);showSettings();});
+    tabs->setMinimumWidth(0);
+    settingsHost->setMinimumWidth(0);
+    carouselLayout->insertStretch(0);
+    auto *subRail=new QScrollArea(settingsHost);
+    subRail->setObjectName("SubSettingsRail");
+    subRail->setFixedHeight(54);
+    subRail->setFrameShape(QFrame::NoFrame);
+    subRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    subRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    subRail->setWidgetResizable(true);
+    auto *subHost=new QWidget(subRail);
+    auto *subLayout=new QHBoxLayout(subHost);
+    subLayout->setContentsMargins(0,3,0,3);
+    subLayout->setSpacing(8);
+    subRail->setWidget(subHost);
+    settingsLayout->insertWidget(1,subRail);
+    auto *subButtons=new QButtonGroup(subHost);
+    subButtons->setExclusive(true);
+    const QVector<QStringList> subNames{{"Frame","Canvas","Safe","Layer","Mask"},{"Hue","Saturation","Brightness","Contrast","Levels","Balance","Key","Auto"},{"Subject","Brush","Contract","Feather","Edge","Hair"},{"Colors","Detail","Smooth","Export"},{"Blend","Opacity","Stroke","Shadow","Glow","Bevel"},{"Start","End","Reset"},{"Base Color","Normal","Roughness","Metallic","Ambient Occlusion","Height / Displacement","Opacity","Emission","Specular","Glossiness","Cavity","Curvature","Subsurface","Clearcoat","Clearcoat Roughness","Sheen","Sheen Roughness","Anisotropy","Transmission","ORM","MRA","RMA","Sphere","Export"},{"Blend","Warp","Mirror","Export"},{"Sizes","Images","Videos","Quality","Archive"}};
+    auto rebuildSubRail=[subLayout,subButtons,subNames](int category){
+        for(auto *button:subButtons->buttons()){subButtons->removeButton(button);button->deleteLater();}
+        while(auto *item=subLayout->takeAt(0))delete item;
+        subLayout->addStretch();
+        const auto &names=subNames.value(category);
+        for(int i=0;i<names.size();++i){auto *button=new SettingRailButton(names[i]);button->setObjectName("SubRailIcon");button->setToolTip(names[i]);button->setCheckable(true);subLayout->addWidget(button);subButtons->addButton(button,i);}
+        subLayout->addStretch();
+        if(auto *first=static_cast<SettingRailButton*>(subButtons->button(0))){first->setChecked(true);first->setSelected(true);}
+    };
+    rebuildSubRail(0);
+    connect(subButtons,&QButtonGroup::idClicked,this,[subButtons](int index){for(auto *button:subButtons->buttons())static_cast<SettingRailButton*>(button)->setSelected(button==subButtons->button(index));});
+    connect(tabs,&QTabWidget::currentChanged,this,[rebuildSubRail](int category){rebuildSubRail(category);});
+    auto *settingCard=new QWidget(settingsHost);
+    settingCard->setObjectName("ActiveSettingCard");
+    auto *settingCardLayout=new QVBoxLayout(settingCard);
+    settingCardLayout->setContentsMargins(12,0,12,0);
+    settingCardLayout->setSpacing(6);
+    settingsLayout->insertWidget(2,settingCard);
+    settingCard->hide();
     connect(subButtons,&QButtonGroup::idClicked,this,[this,settingsHost,settingCard,settingCardLayout,subNames](int index){
         QTimer::singleShot(0,this,[this,settingsHost,settingCard,settingCardLayout,subNames,index]{
             const QString name=subNames.value(tabs->currentIndex()).value(index,"Setting");
@@ -1543,4 +1582,3 @@ void MainWindow::redoRaster(){
     refresh();updateUndoControls();status->setText("Redo");
 }
 void MainWindow::savePreview(const QString &path){grab().save(path);}
-

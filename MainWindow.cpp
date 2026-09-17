@@ -232,12 +232,12 @@ void provideFluidRailRoom(QWidget *rail){
 }
 class SettingRailButton final : public FluidToolButton {
 public:
-    explicit SettingRailButton(QString name,QWidget *parent=nullptr):FluidToolButton(parent),glyph(name.left(2).toUpper()),icon(settingIcon(name)){setIcon(icon);setFixedSize(38,38);}
+    explicit SettingRailButton(QString name,QWidget *parent=nullptr):FluidToolButton(parent),glyph(name.left(2).toUpper()),icon(settingIcon(name)){setIcon(icon);setIconSize(QSize(20,20));setFixedSize(38,38);}
     void setSelected(bool on){selected=on;update();}
     void setLiveRange(int low,int high){minimum=low;maximum=qMax(low+1,high);}
     void setLiveValue(int next){value=next;update();}
 protected:
-    void paintEvent(QPaintEvent *event) override {FluidToolButton::paintEvent(event);if(!selected)return;QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);const QRectF circle=rect().adjusted(2,2,-2,-2);const double amount=qBound(0.,double(value-minimum)/double(maximum-minimum),1.);const QColor fill=QColor::fromHsvF(.38+.20*amount,.78,1.0);painter.setPen(QPen(fill,2.2));painter.setBrush(QColor("#09090c"));painter.drawEllipse(circle);painter.setPen(Qt::NoPen);painter.setBrush(fill);painter.drawPie(circle,90*16,-qRound(amount*5760));painter.setPen(Qt::white);painter.setFont(QFont("Segoe UI",10,QFont::Bold));painter.drawText(circle,Qt::AlignCenter,QString::number(value));}
+    void paintEvent(QPaintEvent *event) override {FluidToolButton::paintEvent(event);if(!selected)return;QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);const QRectF circle=rect().adjusted(2,2,-2,-2);const double amount=qBound(0.,double(value-minimum)/double(maximum-minimum),1.);const QColor fill=QColor::fromHsvF(.38+.20*amount,.78,1.0);painter.setPen(QPen(fill,2.2));painter.setBrush(Qt::NoBrush);painter.drawEllipse(circle);if(property("textureMode").toBool())return;painter.setPen(Qt::NoPen);painter.setBrush(fill);painter.drawPie(circle,90*16,-qRound(amount*5760));painter.setPen(Qt::white);painter.setFont(QFont("Segoe UI",10,QFont::Bold));painter.drawText(circle,Qt::AlignCenter,QString::number(value));}
 private:
     QString glyph;QIcon icon;int minimum=0,maximum=100,value=0;bool selected=false;
 };
@@ -270,7 +270,7 @@ QIcon settingIcon(const QString &name){
     else if(key=="colors")file="gradient tool.png"; else if(key=="detail")file="add anchor point tool.png"; else if(key=="smooth")file="editor_smooth.png"; else if(key=="export")file="trim_save frame.png";
     else if(key=="blend")file="editor_blend.png"; else if(key=="opacity")file="editor_opacity.png"; else if(key=="stroke")file="editor_stroke.png"; else if(key=="shadow")file="editor_shadow.png"; else if(key=="glow")file="editor_glow.png"; else if(key=="bevel")file="editor_bevel.png";
     else if(key=="start")file="trim_head.png"; else if(key=="end")file="trim_marker.png"; else if(key=="reset")file="playback_repeat on.png";
-    else if(key=="sphere")file="icon_textures.png"; else if(key=="maps")file="icon_textures.png"; else if(key=="base")file="icon_color_.png"; else if(key=="normal")file="perspective tool.png"; else if(key=="roughness")file="sponge tool.png"; else if(key=="light")file="editor_brightness_100.png";
+    else if(key=="sphere")file="icon_textures.png"; else if(key=="maps")file="icon_textures.png"; else if(key=="base"||key=="base color")file="icon_color_.png"; else if(key=="normal")file="editor_normal map.png"; else if(key=="roughness")file="editor_roughness map.png"; else if(key=="metallic")file="editor_metal map.png"; else if(key=="light"||key=="emission")file="editor_brightness_100.png"; else if(key=="ambient occlusion")file="editor_shadow.png"; else if(key=="height / displacement")file="distribute heights.png"; else if(key=="specular"||key=="glossiness"||key=="sheen")file="editor_glow.png"; else if(key=="cavity"||key=="curvature")file="editor_levels.png"; else if(key=="subsurface"||key=="transmission")file="editor_opacity.png"; else if(key=="clearcoat"||key=="clearcoat roughness")file="editor_roughness.png"; else if(key=="anisotropy")file="editor_normal map.png"; else if(key=="orm"||key=="mra"||key=="rma")file="icon_textures.png";
     else if(key=="warp")file="warped text.png"; else if(key=="mirror")file="video editor_flip horizontal.png"; else if(key=="sizes")file="crop tool.png"; else if(key=="images")file="frame tool.png"; else if(key=="videos")file="video.png"; else if(key=="quality")file="anti-aliasing.png"; else if(key=="archive")file="smart object.png";
     return file.isEmpty()?QIcon{}:whiteIcon(root+file);
 }
@@ -560,6 +560,13 @@ void MainWindow::buildUi(){
     connect(subButtons,&QButtonGroup::idClicked,this,[this,settingsHost,settingCard,settingCardLayout,subNames](int index){if(!tabs||tabs->currentIndex()!=6||subNames.value(6).value(index)!="Sphere")return;QTimer::singleShot(1,this,[this,settingsHost,settingCard,settingCardLayout]{while(auto *item=settingCardLayout->takeAt(0)){delete item->widget();delete item;}auto *stack=new QVBoxLayout;stack->setContentsMargins(0,0,0,0);stack->setSpacing(5);auto addSphereLight=[stack](const QString &name,QSlider *target){if(!target)return;auto *line=new QHBoxLayout;line->setContentsMargins(0,0,0,0);auto *caption=label(name,"muted");caption->setFixedWidth(68);auto *control=new GradientSlider;control->setObjectName("ActiveSettingSlider");control->setRange(target->minimum(),target->maximum());control->setValue(target->value());control->setToolTip(target->toolTip());line->addWidget(caption);line->addWidget(control,1);connect(control,&QSlider::valueChanged,target,&QSlider::setValue);connect(target,&QSlider::valueChanged,control,[control](int value){QSignalBlocker block(control);control->setValue(value);});stack->addLayout(line);};addSphereLight("AZIMUTH",lightAzimuth);addSphereLight("ELEVATION",lightElevation);addSphereLight("INTENSITY",lightIntensity);settingCardLayout->addLayout(stack,1);settingCard->show();settingsHost->setMinimumHeight(qMin(320,settingsHost->layout()->sizeHint().height()));settingsHost->updateGeometry();});});
     connect(subButtons,&QButtonGroup::idClicked,this,[this,subNames,settingCardLayout](int index){if(!tabs||tabs->currentIndex()!=6)return;const QString name=subNames.value(6).value(index);if(auto *control=textureMapSliders.value(name,nullptr)){control->setFocus(Qt::TabFocusReason);control->ensurePolished();if(textureMapPreview)textureMapPreview->setCurrentText(name);textureRefreshTimer.start();}});
     connect(subButtons,&QButtonGroup::idClicked,this,[subButtons](int index){QTimer::singleShot(0,subButtons,[subButtons,index]{auto *icon=static_cast<SettingRailButton*>(subButtons->button(index));auto *target=qobject_cast<QSlider*>(QApplication::focusWidget());if(!icon||!target)return;icon->setLiveRange(target->minimum(),target->maximum());icon->setLiveValue(target->value());QObject::connect(target,&QSlider::valueChanged,icon,[icon](int value){icon->setLiveValue(value);});});});
+    connect(tabs,&QTabWidget::currentChanged,this,[subRail,subHost,subButtons](int category){
+        const int count=subButtons->buttons().size();
+        const int contentWidth=16+count*38+qMax(0,count-1)*8;
+        subHost->setMinimumWidth(contentWidth);
+        subHost->resize(qMax(contentWidth,subRail->viewport()->width()),subRail->viewport()->height());
+        for(auto *button:subButtons->buttons())button->setProperty("textureMode",category==6);
+    });
     subRail->hide();
     connect(tabButtons,&QButtonGroup::idClicked,this,[subRail,subButtons]{
         subRail->show();

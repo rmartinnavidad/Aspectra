@@ -825,7 +825,7 @@ void MainWindow::buildUi(){
                         board.active = path == currentFile;
                         board.visible = layer.visible;
                         board.image = path == currentFile ? original : layer.artboardImage;
-                        else if (!path.startsWith(QLatin1String("aspectra://"))) {
+                        if (board.image.isNull() && !path.startsWith(QLatin1String("aspectra://"))) {
                             QImageReader reader(path);
                             const QSize sourceSize = reader.size();
                             if (sourceSize.isValid()) reader.setScaledSize(sourceSize.scaled(1200, 1200, Qt::KeepAspectRatio));
@@ -938,8 +938,7 @@ void MainWindow::buildUi(){
                     baseItem->setSizeHint(QSize(0, 40));
                     bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
                     QString baseName = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() ? canvasLayers[sourcePath].name : (sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName());
-                    QImage baseImage = canvasLayers.value(sourcePath).artboardImage;
-                    if (baseImage.isNull() && sourcePath == currentFile) baseImage = original;
+                    QImage baseImage = sourcePath == currentFile ? original : canvasLayers.value(sourcePath).artboardImage;
                     if (baseImage.isNull() && !sourcePath.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(sourcePath);reader.setScaledSize(QSize(64,64));baseImage=reader.read(); }
                     auto *baseWidget = createLayerRow(baseName, baseImage, canvasLayers.value(sourcePath).mask, true, baseVisible, true, true, [this, sourcePath](bool visible) {
                         if (canvasLayers.contains(sourcePath)) { canvasLayers[sourcePath].visible = visible; refresh(); }
@@ -979,9 +978,9 @@ void MainWindow::buildUi(){
                     layer.source = id;
                     layer.name = duplicate ? layer.name + " copy" : QString("Artboard %1").arg(this->batch.files.size() + 1);
                     if (!layer.nativeSize.isValid()) layer.nativeSize = QSize(widthInput->value(), heightInput->value());
-                    if (duplicate && layer.artboardImage.isNull()) {
+                    if (duplicate) {
                         if (after == currentFile) layer.artboardImage = original;
-                        else if (!after.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(after); layer.artboardImage = reader.read(); }
+                        else if (layer.artboardImage.isNull() && !after.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(after); layer.artboardImage = reader.read(); }
                     }
                     canvasLayers[id] = layer;
                     const int insertAt = qBound(0, this->batch.files.indexOf(after) + 1, int(this->batch.files.size()));
@@ -2012,7 +2011,7 @@ void MainWindow::loadFiles(const QStringList &paths){
 }
 void MainWindow::selectFile(const QString &path){
       if(batchStrip){batchStrip->show();if(auto *dock=batchStrip->parentWidget())dock->setFixedHeight(164);}if(exportButton)exportButton->setEnabled(true);
-      if(loading)return;if(path!=currentFile)preview->setMaskEditMode(false);stopPlayback();player->setSource({});currentFile=path;const bool isArtboard=path.startsWith(QLatin1String("aspectra://"));if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=isArtboard?QString("Artboard %1").arg(batch.files.indexOf(path)+1):QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();if(isArtboard)layer.nativeSize=QSize(widthInput->value(),heightInput->value());canvasLayers[path]=layer;}restoreLayerOverride();bool video=!isArtboard&&VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
+      if(loading)return;if(path!=currentFile){if(currentFile.startsWith(QLatin1String("aspectra://"))&&canvasLayers.contains(currentFile)&&!original.isNull())canvasLayers[currentFile].artboardImage=original;preview->setMaskEditMode(false);}stopPlayback();player->setSource({});currentFile=path;const bool isArtboard=path.startsWith(QLatin1String("aspectra://"));if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=isArtboard?QString("Artboard %1").arg(batch.files.indexOf(path)+1):QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();if(isArtboard)layer.nativeSize=QSize(widthInput->value(),heightInput->value());canvasLayers[path]=layer;}restoreLayerOverride();bool video=!isArtboard&&VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
     QString name=isArtboard?canvasLayers.value(path).name:inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());filename->setText(fontMetrics().elidedText(name,Qt::ElideMiddle,qMax(160,width()-190)));filename->setToolTip(isArtboard?name:inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}if(batchNavigator){QSignalBlocker block(batchNavigator);batchNavigator->setValue(batch.files.indexOf(path));}preview->setActiveArtboard(path);navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
     if(isArtboard){
         // Artboards are synthetic canvases with no file on disk (identified by

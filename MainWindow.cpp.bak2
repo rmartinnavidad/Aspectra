@@ -815,8 +815,7 @@ void MainWindow::buildUi(){
                     baseItem->setSizeHint(QSize(0, 40));
                     bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
                     bool hasMask = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].mask.isNull();
-                    QString baseName = sourcePath.isEmpty() ? "Canvas" : (canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() ? canvasLayers[sourcePath].name : QFileInfo(sourcePath).completeBaseName());
-                    auto *baseWidget = createLayerRow(baseName, baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
+                    auto *baseWidget = createLayerRow(sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName(), baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
                         if (canvasLayers.contains(sourcePath)) {
                             canvasLayers[sourcePath].visible = visible;
                             refresh();
@@ -847,7 +846,7 @@ void MainWindow::buildUi(){
 
                     stackWidget->setCurrentIndex(1);
                     backBtn->show();
-                    crumbLabel->setText("Artboards / " + baseName);
+                    crumbLabel->setText("Artboards / " + QFileInfo(sourcePath).completeBaseName());
                     blendCombo->setCurrentText("Normal");
                 };
 
@@ -1662,19 +1661,8 @@ void MainWindow::loadFiles(const QStringList &paths){
 }
 void MainWindow::selectFile(const QString &path){
       if(batchStrip){batchStrip->show();if(auto *dock=batchStrip->parentWidget())dock->setFixedHeight(164);}if(exportButton)exportButton->setEnabled(true);
-      if(loading)return;stopPlayback();player->setSource({});currentFile=path;const bool isArtboard=path.startsWith(QLatin1String("aspectra://"));if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=isArtboard?QString("Artboard %1").arg(batch.files.indexOf(path)+1):QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();if(isArtboard)layer.nativeSize=QSize(widthInput->value(),heightInput->value());canvasLayers[path]=layer;}restoreLayerOverride();bool video=!isArtboard&&VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
-    QString name=isArtboard?canvasLayers.value(path).name:inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());filename->setText(fontMetrics().elidedText(name,Qt::ElideMiddle,qMax(160,width()-190)));filename->setToolTip(isArtboard?name:inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
-    if(isArtboard){
-        // Artboards are synthetic canvases with no file on disk (identified by
-        // an aspectra:// URI). Routing them through the async file/video loader
-        // below would always fail (no such file), silently pop an error and
-        // leave the previous artboard's image on screen. Build a blank
-        // transparent frame from the stored layer size instead.
-        loading=false;const auto &layer=canvasLayers[path];QSize size=layer.nativeSize.isValid()?layer.nativeSize:QSize(widthInput->value(),heightInput->value());
-        original=QImage(size,QImage::Format_ARGB32);original.fill(Qt::transparent);texturePreviewSource={};media.size=size;
-        refresh();status->setText(QString("Artboard \"%1\" ready").arg(layer.name));
-        return;
-    }
+      if(loading)return;stopPlayback();player->setSource({});currentFile=path;if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();canvasLayers[path]=layer;}restoreLayerOverride();bool video=VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
+    QString name=inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());filename->setText(fontMetrics().elidedText(name,Qt::ElideMiddle,qMax(160,width()-190)));filename->setToolTip(inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
     status->setText("Loading…");loading=true;QString ffmpeg=VideoProcessor::findFfmpeg();loadWatcher.setFuture(QtConcurrent::run([path,video,ffmpeg]{LoadedMedia result;try{if(video){result.info=VideoProcessor::inspect(ffmpeg,path);result.image=VideoProcessor::firstFrame(ffmpeg,path);}else{result.image=ImageProcessor::read(path);result.info.size=result.image.size();}}catch(const std::exception &e){result.error=QString::fromUtf8(e.what());}return result;}));
 }
 void MainWindow::navigate(int delta){if(batch.files.isEmpty()||loading)return;int index=batch.files.indexOf(currentFile);index=(index+delta+batch.files.size())%batch.files.size();selectFile(batch.files[index]);}

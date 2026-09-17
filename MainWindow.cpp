@@ -608,7 +608,7 @@ void MainWindow::buildUi(){
             // =================================================================
             // EXPLICIT LAYER CARD OVERRIDE WITH ABSOLUTE EARLY RETURN
             // =================================================================
-            if (name == "Layer") {
+           if (name == "Layer") {
                 clearLayoutItems(settingCardLayout);
                 settingCardLayout->setContentsMargins(6, 4, 6, 4);
                 settingCardLayout->setSpacing(3);
@@ -681,18 +681,18 @@ void MainWindow::buildUi(){
                 settingCardLayout->addWidget(topContainer);
 
                 // =============================================================
-                // 2. MIDDLE SECTION: NAVIGATION & VIEW SWITCHER (Rail <-> Rows)
+                // 2. MIDDLE SECTION: DRILL-DOWN NAVIGATION & VIEW SWITCHER
                 // =============================================================
                 auto *navRow = new QHBoxLayout;
                 navRow->setSpacing(4);
                 auto *backBtn = new QToolButton;
-                backBtn->setText("‹ Back to Artboards");
+                backBtn->setText("‹ Back");
                 backBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
                 backBtn->setStyleSheet("QToolButton { color: #3ddcff; font-size: 11px; font-weight: bold; background: transparent; border: none; padding: 0; }"
                                        "QToolButton:hover { color: #ffffff; }");
                 backBtn->hide();
 
-                auto *crumbLabel = new QLabel("Artboards (Horizontal Rail)");
+                auto *crumbLabel = new QLabel("Artboards");
                 crumbLabel->setStyleSheet("color: #b9d1ff; font-size: 10px; font-weight: 700; letter-spacing: 1px;");
 
                 navRow->addWidget(backBtn);
@@ -702,7 +702,7 @@ void MainWindow::buildUi(){
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail (Draggable & Reorderable)
+                // Page 0: Horizontal Artboard Rail (Root Level)
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
@@ -718,7 +718,7 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(railWidget);
 
-                // Page 1: Detailed Professional Layer Rows ([👁] [Thumb] [Mask] Name [fx] [🔗] [>])
+                // Page 1: Vertical List for Groups and Layers (Drill-down Levels)
                 auto *detailRowList = new QListWidget;
                 detailRowList->setStyleSheet(
                     "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 2px; }"
@@ -727,8 +727,17 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(detailRowList);
 
-                // Populate Root Rail from actual batch files / canvas layers
-                auto populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
+                // Navigation State tracking: 0 = Artboards Rail, 1 = Groups View, 2 = Layers View
+                auto currentViewLevel = std::make_shared<int>(0);
+                auto activeArtboardName = std::make_shared<QString>();
+                auto activeGroupName = std::make_shared<QString>();
+
+                std::function<void()> populateRail;
+                std::function<void(const QString&)> populateGroups;
+                std::function<void(const QString&)> populateLayers;
+
+                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, currentViewLevel]() {
+                    *currentViewLevel = 0;
                     railWidget->clear();
                     QStringList paths = this->batch.files;
                     if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.append(currentFile);
@@ -736,8 +745,8 @@ void MainWindow::buildUi(){
                         if (!paths.contains(it.key())) paths.append(it.key());
 
                     if (paths.isEmpty()) {
-                        auto *item = new QListWidgetItem("📁 Empty Canvas");
-                        item->setData(Qt::UserRole, QString());
+                        auto *item = new QListWidgetItem("📁 Artboard 1");
+                        item->setData(Qt::UserRole, QString("Artboard 1"));
                         railWidget->addItem(item);
                     } else {
                         for (const QString &path : paths) {
@@ -754,18 +763,37 @@ void MainWindow::buildUi(){
                     blendCombo->setCurrentText("Pass Through");
                 };
 
-                // Populate Detailed Layer Rows with Interactive Visibility Toggles & Custom Widgets
-                auto populateLayerRows = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
+                populateGroups = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, currentViewLevel, activeArtboardName](const QString &artboardName) {
+                    *currentViewLevel = 1;
+                    *activeArtboardName = artboardName;
                     detailRowList->clear();
 
-                    // Helper to create a fully interactive layer row widget with visibility callback
+                    // Sample groups inside the artboard
+                    QStringList groupNames = {"Background Group", "Character Group", "Effects Group"};
+                    for (const QString &gName : groupNames) {
+                        auto *item = new QListWidgetItem("📂 " + gName + "  >");
+                        item->setData(Qt::UserRole, gName);
+                        detailRowList->addItem(item);
+                    }
+
+                    stackWidget->setCurrentIndex(1);
+                    backBtn->show();
+                    crumbLabel->setText("Artboards / " + artboardName);
+                    blendCombo->setCurrentText("Pass Through");
+                };
+
+                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, currentViewLevel, activeArtboardName, activeGroupName](const QString &groupName) {
+                    *currentViewLevel = 2;
+                    *activeGroupName = groupName;
+                    detailRowList->clear();
+
+                    // Helper for interactive custom layer row widgets with visibility toggle
                     auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
                         auto *rowItemWidget = new QWidget;
                         auto *rowLayout = new QHBoxLayout(rowItemWidget);
                         rowLayout->setContentsMargins(4, 2, 4, 2);
                         rowLayout->setSpacing(6);
 
-                        // 1. Interactive Visibility Eye Toggle Button
                         auto *eyeBtn = new QToolButton;
                         eyeBtn->setCheckable(true);
                         eyeBtn->setChecked(isVisible);
@@ -780,13 +808,11 @@ void MainWindow::buildUi(){
                         });
                         rowLayout->addWidget(eyeBtn);
 
-                        // 2. Image Thumbnail Preview Box
                         auto *thumbLbl = new QLabel;
                         thumbLbl->setFixedSize(24, 24);
                         thumbLbl->setStyleSheet("background: #1c202c; border: 1px solid #323a4d; border-radius: 3px;");
                         rowLayout->addWidget(thumbLbl);
 
-                        // 3. Layer Mask Thumbnail (if present)
                         if (hasMask) {
                             auto *maskLbl = new QLabel;
                             maskLbl->setFixedSize(24, 24);
@@ -794,22 +820,18 @@ void MainWindow::buildUi(){
                             rowLayout->addWidget(maskLbl);
                         }
 
-                        // 4. Editable Layer Name Label
                         auto *nameLbl = new QLabel(layerName);
                         nameLbl->setStyleSheet("color: #e0e4ee; font-size: 11px; font-weight: 600; background: transparent;");
                         rowLayout->addWidget(nameLbl);
 
-                        // 5. Spacer pushing all trailing indicators (fx, link) to the far right
                         rowLayout->addStretch(1);
 
-                        // 6. FX Badge
                         if (hasFx) {
                             auto *fxLbl = new QLabel("fx");
                             fxLbl->setStyleSheet("color: #f39c12; font-size: 9px; font-weight: bold; background: #161922; border: 1px solid #4a3b1c; border-radius: 3px; padding: 1px 4px;");
                             rowLayout->addWidget(fxLbl);
                         }
 
-                        // 7. Chain Link Icon (Mask link state)
                         if (isLinked) {
                             auto *linkBtn = new QToolButton;
                             linkBtn->setText("🔗");
@@ -821,78 +843,51 @@ void MainWindow::buildUi(){
                         return rowItemWidget;
                     };
 
-                    // Add Canvas Base Item with visibility toggle binding
-                    auto *baseItem = new QListWidgetItem(detailRowList);
-                    baseItem->setSizeHint(QSize(0, 38));
-                    bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
-                    auto *baseWidget = createLayerRow("Canvas Base", baseVisible, true, true, true, [this, sourcePath](bool visible) {
-                        if (canvasLayers.contains(sourcePath)) {
-                            canvasLayers[sourcePath].visible = visible;
+                    // Add layers for this group
+                    QStringList layerNames = {"Base Fill", "Primary Artwork", "Highlight Mask"};
+                    for (int i = 0; i < layerNames.size(); ++i) {
+                        auto *item = new QListWidgetItem(detailRowList);
+                        item->setSizeHint(QSize(0, 38));
+                        auto *layerWidget = createLayerRow(layerNames[i], true, i == 2, true, i == 2, [this, i](bool visible) {
+                            // Live visibility binding for layers
                             refresh();
-                        }
-                    });
-                    detailRowList->setItemWidget(baseItem, baseWidget);
-                    baseItem->setData(Qt::UserRole, "base");
-                    baseItem->setData(Qt::UserRole + 1, sourcePath);
-
-                    // Add Timeline Tracks / Sub-layers with live toggle binding
-                    if (sourcePath == currentFile) {
-                        for (int i = 0; i < timelineTracks.size(); ++i) {
-                            const auto &track = timelineTracks[i];
-                            QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
-                            auto *item = new QListWidgetItem(detailRowList);
-                            item->setSizeHint(QSize(0, 38));
-                            auto *trackWidget = createLayerRow(tName, track.enabled, false, true, false, [this, i](bool visible) {
-                                if (i >= 0 && i < timelineTracks.size()) {
-                                    timelineTracks[i].enabled = visible;
-                                    updateTrackPanel();
-                                    refresh();
-                                }
-                            });
-                            detailRowList->setItemWidget(item, trackWidget);
-                            item->setData(Qt::UserRole, "track");
-                            item->setData(Qt::UserRole + 2, i);
-                        }
+                        });
+                        detailRowList->setItemWidget(item, layerWidget);
+                        item->setData(Qt::UserRole, "layer");
                     }
 
                     stackWidget->setCurrentIndex(1);
                     backBtn->show();
-                    crumbLabel->setText("Artboards / " + QFileInfo(sourcePath).completeBaseName());
+                    crumbLabel->setText(QString("Artboards / %1 / %2").arg(*activeArtboardName, groupName));
                     blendCombo->setCurrentText("Normal");
                 };
 
-                QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayerRows](QListWidgetItem *item) {
+                // Rail item double-click -> Drill down to Groups
+                QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateGroups](QListWidgetItem *item) {
                     if (item) {
-                        QString path = item->data(Qt::UserRole).toString();
-                        if (!path.isEmpty()) populateLayerRows(path);
+                        QString name = item->text().section(' ', 1);
+                        populateGroups(name);
                     }
                 });
 
-                QObject::connect(backBtn, &QToolButton::clicked, populateRail);
+                // Detail list double-click -> If viewing groups, drill down to layers
+                QObject::connect(detailRowList, &QListWidget::itemDoubleClicked, [currentViewLevel, populateLayers](QListWidgetItem *item) {
+                    if (item && *currentViewLevel == 1) {
+                        QString groupName = item->data(Qt::UserRole).toString();
+                        if (!groupName.isEmpty()) populateLayers(groupName);
+                    }
+                });
+
+                // Back button handler for multi-level navigation
+                QObject::connect(backBtn, &QToolButton::clicked, [currentViewLevel, populateRail, populateGroups, activeArtboardName]() {
+                    if (*currentViewLevel == 2) {
+                        populateGroups(*activeArtboardName);
+                    } else if (*currentViewLevel == 1) {
+                        populateRail();
+                    }
+                });
+
                 populateRail();
-
-                // Bind Selection to Top Sliders
-                QObject::connect(detailRowList, &QListWidget::currentItemChanged, [this, blendCombo, opacitySlider = topContainer->findChildren<QSlider*>().value(0), fillSlider = topContainer->findChildren<QSlider*>().value(1)](QListWidgetItem *item) {
-                    if (!item || !opacitySlider || !fillSlider) return;
-                    QSignalBlocker b1(blendCombo), b2(opacitySlider), b3(fillSlider);
-                    QString kind = item->data(Qt::UserRole).toString();
-                    if (kind == "track") {
-                        int i = item->data(Qt::UserRole + 2).toInt();
-                        if (i >= 0 && i < timelineTracks.size()) {
-                            blendCombo->setCurrentText(timelineTracks[i].blendMode);
-                            opacitySlider->setValue(qRound(timelineTracks[i].opacity * 100));
-                            fillSlider->setValue(qRound(timelineTracks[i].fill * 100));
-                        }
-                    } else if (kind == "base") {
-                        QString path = item->data(Qt::UserRole + 1).toString();
-                        if (canvasLayers.contains(path)) {
-                            auto &layer = canvasLayers[path];
-                            blendCombo->setCurrentText(layer.blendMode);
-                            opacitySlider->setValue(qRound(layer.opacity * 100));
-                            fillSlider->setValue(qRound(layer.fill * 100));
-                        }
-                    }
-                });
 
                 // =============================================================
                 // 3. BOTTOM SECTION: COMPACT ACTION STRIP

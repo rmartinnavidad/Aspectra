@@ -709,7 +709,7 @@ void MainWindow::buildUi(){
                 railWidget->setDragDropMode(QAbstractItemView::InternalMove);
                 railWidget->setStyleSheet(
                     "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
-                    "QListWidget::item { width: 120px; height: 64px; background: #000000; border: 1px solid #2d2d35; border-radius: 8px; margin-right: 8px; color: #ffffff; font-size: 10px; font-weight: 600; padding: 4px; }"
+                    "QListWidget::item { width: 360px; height: 64px; background: #000000; border: 1px solid #2d2d35; border-radius: 8px; margin-right: 8px; color: #ffffff; font-size: 10px; font-weight: 600; padding: 4px; }"
                     "QListWidget::item:selected { border: 2px solid #7a4dff; background: #101015; }"
                 );
                 stackWidget->addWidget(railWidget);

@@ -3,11 +3,33 @@
 #include <QtWidgets>
 #include "Processing.h"
 #include "RasterToolEngine.h"
+
+struct PreviewArtboard
+{
+    QString id;
+    QString name;
+
+    QPointF position;
+    QSize size;
+
+    QImage image;
+
+    bool active = false;
+    bool visible = true;
+};
+
 class PreviewWidget : public QWidget {
     Q_OBJECT
 public:
     explicit PreviewWidget(QWidget *parent=nullptr);
     void setFrame(const QImage &image);
+
+    void setArtboards(const QVector<PreviewArtboard> &items);
+    void clearArtboards();
+    void setActiveArtboard(const QString &id);
+
+    QVector<PreviewArtboard> artboards() const { return workspaceArtboards; }
+
     void setTextureFrame(const QImage &image);
     void clearTextureFrame();
     void setTextureSphereInteractive(bool on){sphereInteractive=on;if(!on)sphereDragging=false;}
@@ -40,6 +62,7 @@ signals:
     void sphereOrbited(QPoint delta,bool pan);
     void sphereZoomed(int delta);
     void viewZoomChanged(double value);
+    void artboardSelected(QString id);
 protected:
     void paintEvent(QPaintEvent *) override;
     void resizeEvent(QResizeEvent *) override;
@@ -51,6 +74,12 @@ protected:
     void mouseReleaseEvent(QMouseEvent *) override;
 private:
     QImage frame, textureFrame, vectorTraceFrame, layerMask, selectionMask, processed;
+    QVector<PreviewArtboard> workspaceArtboards;
+    QString activeArtboardId;
+
+    QRectF artboardScreenRect(const PreviewArtboard &artboard) const;
+    QRectF workspaceBounds() const;
+    
     bool textureActive=false, vectorTraceActive=false,sphereInteractive=false,sphereDragging=false;
     double viewZoom=1.0;
     Adjustments settings;

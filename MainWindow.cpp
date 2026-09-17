@@ -529,7 +529,7 @@ void MainWindow::buildUi(){
     const QStringList names{"Canvas","Adjust","Select","Trace","Effects","Video","Texture","Pattern","Export"};const QStringList icons{"artboard tool.png","gradient tool.png","quick selection.png","pen tool.png","brush tool.png","slice tool.png","gradient tool copy.png","pattern stamp.png","move tool.png"};
     for(int i=0;i<names.size();++i){auto *tab=new FluidToolButton(carousel);tab->setObjectName("CarouselTab");tab->setText(names[i]);tab->setIcon(whiteIcon(iconRoot+icons[i]));tab->setIconSize(QSize(28,28));tab->setToolButtonStyle(Qt::ToolButtonIconOnly);tab->setCheckable(true);tab->setFixedSize(48,48);tab->setToolTip(names[i]+" settings");tab->installEventFilter(this);carouselLayout->addWidget(tab);tabButtons->addButton(tab,i);}
     auto *moreTab=new FluidToolButton(carousel);moreTab->setObjectName("CarouselTab");moreTab->setText("More");moreTab->setIcon(whiteIcon(iconRoot+"panel settings.png"));moreTab->setIconSize(QSize(28,28));moreTab->setToolButtonStyle(Qt::ToolButtonIconOnly);moreTab->setFixedSize(48,48);moreTab->setToolTip("More actions");moreTab->setMenu(commandMenu);moreTab->setPopupMode(QToolButton::InstantPopup);moreTab->installEventFilter(this);carouselLayout->addWidget(moreTab);carouselLayout->addStretch();tabButtons->button(0)->setChecked(true);connect(tabButtons,&QButtonGroup::idClicked,tabs,&QTabWidget::setCurrentIndex);layout->addWidget(carouselScroll);layout->addWidget(tabs,1);
-    carouselContent=tabCarousel->widget();tabCarousel->setWidgetResizable(false);carouselContent->setFixedWidth(576);carouselLeftFade=new QWidget(tabCarousel->viewport());carouselRightFade=new QWidget(tabCarousel->viewport());for(auto *fade:{carouselLeftFade,carouselRightFade}){fade->setAttribute(Qt::WA_TransparentForMouseEvents);fade->raise();}carouselLeftFade->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #000000,stop:.55 rgba(0,0,0,210),stop:1 rgba(0,0,0,0));");carouselRightFade->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0,0,0,0),stop:.45 rgba(0,0,0,210),stop:1 #000000);");auto updateCarouselFeather=[this]{if(!tabCarousel||!carouselLeftFade||!carouselRightFade)return;auto *view=tabCarousel->viewport();carouselLeftFade->setGeometry(0,0,44,view->height());carouselRightFade->setGeometry(view->width()-44,0,44,view->height());auto *bar=tabCarousel->horizontalScrollBar();carouselLeftFade->setVisible(bar->value()>0);carouselRightFade->setVisible(bar->value()<bar->maximum());carouselLeftFade->raise();carouselRightFade->raise();};connect(tabCarousel->horizontalScrollBar(),&QScrollBar::valueChanged,this,[updateCarouselFeather](int){updateCarouselFeather();});QTimer::singleShot(0,this,updateCarouselFeather);
+    carouselContent=tabCarousel->widget();tabCarousel->setWidgetResizable(false);carouselContent->setFixedWidth(576);carouselLeftFade=new QWidget(tabCarousel->viewport());carouselRightFade=new QWidget(tabCarousel->viewport());for(auto *fade:{carouselLeftFade,carouselRightFade}){fade->setObjectName("RailEdgeFade");fade->setAttribute(Qt::WA_TransparentForMouseEvents);fade->raise();}carouselLeftFade->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #000000,stop:.55 rgba(0,0,0,210),stop:1 rgba(0,0,0,0));");carouselRightFade->setStyleSheet("background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0,0,0,0),stop:.45 rgba(0,0,0,210),stop:1 #000000);");auto updateCarouselFeather=[this]{if(!tabCarousel||!carouselLeftFade||!carouselRightFade)return;auto *view=tabCarousel->viewport();carouselLeftFade->setGeometry(0,0,44,view->height());carouselRightFade->setGeometry(view->width()-44,0,44,view->height());auto *bar=tabCarousel->horizontalScrollBar();carouselLeftFade->setVisible(!carouselLeftFade->property("immersiveHidden").toBool()&&bar->value()>0);carouselRightFade->setVisible(!carouselRightFade->property("immersiveHidden").toBool()&&bar->value()<bar->maximum());carouselLeftFade->raise();carouselRightFade->raise();};connect(tabCarousel->horizontalScrollBar(),&QScrollBar::valueChanged,this,[updateCarouselFeather](int){updateCarouselFeather();});QTimer::singleShot(0,this,updateCarouselFeather);
     layout->removeWidget(carouselScroll);
     layout->removeWidget(tabs);
     auto *settingsHost=new QWidget(shell);
@@ -1332,10 +1332,17 @@ bool MainWindow::eventFilter(QObject *watched,QEvent *event){
     // The focus preview is visually below transparent header/rail surfaces.
     // Capture body drags at the application level so those surfaces can never
     // swallow the actual image-navigation gesture.
-    if(focusCanvas&&(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseMove||event->type()==QEvent::MouseButtonRelease)&&watched!=preview&&!qobject_cast<QAbstractButton*>(watched)){
-        auto *mouse=static_cast<QMouseEvent*>(event);const QPoint local=preview->mapFromGlobal(mouse->globalPosition().toPoint());
-        const QRect body=preview->rect().adjusted(0,72,0,-72);
-        if(body.contains(local)){
+    if(focusCanvas&&(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseMove||event->type()==QEvent::MouseButtonRelease)&&watched!=preview){
+        bool isControl=false;
+        for(QObject *parent=watched;parent;parent=parent->parent()){
+            if(qobject_cast<QAbstractButton*>(parent)||qobject_cast<QSlider*>(parent)||qobject_cast<QComboBox*>(parent)){
+                isControl=true;
+                break;
+            }
+        }
+        if(!isControl){
+            auto *mouse=static_cast<QMouseEvent*>(event);
+            const QPoint local=preview->mapFromGlobal(mouse->globalPosition().toPoint());
             QMouseEvent forwarded(event->type(),QPointF(local),mouse->globalPosition(),mouse->button(),mouse->buttons(),mouse->modifiers());
             QCoreApplication::sendEvent(preview,&forwarded);
             return true;

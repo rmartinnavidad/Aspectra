@@ -754,23 +754,30 @@ void MainWindow::buildUi(){
                     blendCombo->setCurrentText("Pass Through");
                 };
 
-                // Populate Detailed Layer Rows with Custom Photoshop-grade Widgets
+                // Populate Detailed Layer Rows with Interactive Visibility Toggles & Custom Widgets
                 auto populateLayerRows = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
                     detailRowList->clear();
 
-                    // Helper to create a native, perfectly aligned layer row widget
-                    auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked) {
+                    // Helper to create a fully interactive layer row widget with visibility callback
+                    auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
                         auto *rowItemWidget = new QWidget;
                         auto *rowLayout = new QHBoxLayout(rowItemWidget);
                         rowLayout->setContentsMargins(4, 2, 4, 2);
                         rowLayout->setSpacing(6);
 
-                        // 1. Visibility Eye Toggle Button
+                        // 1. Interactive Visibility Eye Toggle Button
                         auto *eyeBtn = new QToolButton;
+                        eyeBtn->setCheckable(true);
+                        eyeBtn->setChecked(isVisible);
                         eyeBtn->setText(isVisible ? "👁" : "○");
                         eyeBtn->setFixedSize(20, 20);
                         eyeBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #3ddcff; font-size: 12px; }"
-                                              "QToolButton:hover { color: #ffffff; }");
+                                              "QToolButton:checked { color: #3ddcff; } QToolButton:not(:checked) { color: #697081; }");
+                        
+                        QObject::connect(eyeBtn, &QToolButton::toggled, [eyeBtn, onToggleVisibility](bool checked) {
+                            eyeBtn->setText(checked ? "👁" : "○");
+                            if (onToggleVisibility) onToggleVisibility(checked);
+                        });
                         rowLayout->addWidget(eyeBtn);
 
                         // 2. Image Thumbnail Preview Box
@@ -814,22 +821,34 @@ void MainWindow::buildUi(){
                         return rowItemWidget;
                     };
 
-                    // Add Canvas Base Item
+                    // Add Canvas Base Item with visibility toggle binding
                     auto *baseItem = new QListWidgetItem(detailRowList);
                     baseItem->setSizeHint(QSize(0, 38));
-                    auto *baseWidget = createLayerRow("Canvas Base", true, true, true, true);
+                    bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
+                    auto *baseWidget = createLayerRow("Canvas Base", baseVisible, true, true, true, [this, sourcePath](bool visible) {
+                        if (canvasLayers.contains(sourcePath)) {
+                            canvasLayers[sourcePath].visible = visible;
+                            refresh();
+                        }
+                    });
                     detailRowList->setItemWidget(baseItem, baseWidget);
                     baseItem->setData(Qt::UserRole, "base");
                     baseItem->setData(Qt::UserRole + 1, sourcePath);
 
-                    // Add Timeline Tracks / Sub-layers if viewing current file
+                    // Add Timeline Tracks / Sub-layers with live toggle binding
                     if (sourcePath == currentFile) {
                         for (int i = 0; i < timelineTracks.size(); ++i) {
                             const auto &track = timelineTracks[i];
                             QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
                             auto *item = new QListWidgetItem(detailRowList);
                             item->setSizeHint(QSize(0, 38));
-                            auto *trackWidget = createLayerRow(tName, track.enabled, false, true, false);
+                            auto *trackWidget = createLayerRow(tName, track.enabled, false, true, false, [this, i](bool visible) {
+                                if (i >= 0 && i < timelineTracks.size()) {
+                                    timelineTracks[i].enabled = visible;
+                                    updateTrackPanel();
+                                    refresh();
+                                }
+                            });
                             detailRowList->setItemWidget(item, trackWidget);
                             item->setData(Qt::UserRole, "track");
                             item->setData(Qt::UserRole + 2, i);

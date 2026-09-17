@@ -1214,11 +1214,11 @@ void MainWindow::buildUi(){
                     if (currentFile.isEmpty() || original.isNull()) return;
                     auto &layer = canvasLayers[currentFile];
                     QSize sz = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
-                    layer.mask = QImage(sz, QImage::Format_Grayscale8);
-                    layer.mask.fill(255);
+                    if (layer.mask.isNull()) { layer.mask = QImage(sz, QImage::Format_Grayscale8);layer.mask.fill(255); }
                     preview->setLayerMask(layer.mask);
-                    if (stackWidget->currentIndex() == 1 && populateLayersPtr) (*populateLayersPtr)(currentFile);
-                    status->setText("Layer mask created");
+                    preview->setMaskEditMode(true);
+                    if (populateLayersPtr) (*populateLayersPtr)(currentFile);
+                    status->setText("Editing mask · drag to reveal · Shift+drag to hide");
                 });
 
                 QObject::connect(adjBtn, &QToolButton::clicked, this, [this]() {

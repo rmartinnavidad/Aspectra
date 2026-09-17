@@ -799,6 +799,7 @@ void MainWindow::buildUi(){
                 // --- Shared Lambdas using shared_ptr to safely break scope dead-ends ---
                 auto populateRailPtr = std::make_shared<std::function<void()>>();
                 auto populateLayersPtr = std::make_shared<std::function<void(const QString&)>>();
+                auto expandedArtboards=std::make_shared<QSet<QString>>();
                 auto thumbnailIcon = [](const QImage &image, int side) {
                     QPixmap tile(side, side);
                     tile.fill(QColor("#161a22"));
@@ -838,8 +839,10 @@ void MainWindow::buildUi(){
                     else preview->clearArtboards();
                 };
 
-                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls, thumbnailIcon]() {
+                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls, thumbnailIcon, populateRailPtr, expandedArtboards]() {
                     railWidget->clear();
+                    int maxExpandedLayers=0;for(const QString &path:*expandedArtboards){int count=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++count;maxExpandedLayers=qMax(maxExpandedLayers,count);}
+                    const int railHeight=96+maxExpandedLayers*34;railWidget->setFixedHeight(railHeight);railWidget->setGridSize(QSize(248,railHeight-24));
                     
                     if (this->batch.files.isEmpty()) {
                         auto *item = new QListWidgetItem("Blank Canvas");
@@ -857,14 +860,17 @@ void MainWindow::buildUi(){
                                 reader.setScaledSize(QSize(64, 64));
                                 image = reader.read();
                             }
-                            int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;
-                            auto *item=new QListWidgetItem;item->setData(Qt::UserRole,path);item->setData(Qt::UserRole+1,layerCount);item->setSizeHint(QSize(240,64)); // Explicit enforcement
+                            int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;const bool expanded=expandedArtboards->contains(path);
+                            auto *item=new QListWidgetItem;item->setData(Qt::UserRole,path);item->setData(Qt::UserRole+1,layerCount);item->setSizeHint(QSize(240,expanded?64+layerCount*34:64)); // Explicit 240px card width
                             railWidget->addItem(item);
-                            auto *card=new QWidget(railWidget);card->setAttribute(Qt::WA_TransparentForMouseEvents);auto *cardRow=new QHBoxLayout(card);cardRow->setContentsMargins(6,4,8,4);cardRow->setSpacing(8);
-                            auto *thumb=new QLabel(card);thumb->setPixmap(thumbnailIcon(image,40).pixmap(40,40));thumb->setFixedSize(40,40);thumb->setAlignment(Qt::AlignCenter);
-                            auto *nameLabel=new QLabel(displayName,card);nameLabel->setStyleSheet("color:#ffffff;font-size:11px;font-weight:600;background:transparent;");nameLabel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
-                            auto *layerWheel=new QLabel(QString::number(layerCount),card);layerWheel->setObjectName("SliderValue");layerWheel->setFixedSize(30,30);layerWheel->setAlignment(Qt::AlignCenter);layerWheel->setToolTip(QString("%1 layer%2 in this artboard").arg(layerCount).arg(layerCount==1?"":"s"));
-                            cardRow->addWidget(thumb);cardRow->addWidget(nameLabel,1);cardRow->addWidget(layerWheel);
+                            auto *card=new QWidget(railWidget);auto *cardColumn=new QVBoxLayout(card);cardColumn->setContentsMargins(0,0,0,0);cardColumn->setSpacing(2);auto *header=new QWidget(card);header->setFixedHeight(58);auto *cardRow=new QHBoxLayout(header);cardRow->setContentsMargins(6,4,8,4);cardRow->setSpacing(8);
+                            auto *toggle=new QToolButton(header);toggle->setText(expanded?QString::fromUtf8("▾"):QString::fromUtf8("›"));toggle->setFixedSize(22,30);toggle->setCursor(Qt::PointingHandCursor);toggle->setToolTip(expanded?"Collapse artboard layers":"Expand artboard layers");toggle->setStyleSheet("QToolButton{background:transparent;border:none;color:#ffffff;font-size:18px;font-weight:700;padding:0;}QToolButton:hover{color:#3ddcff;}");
+                            auto *thumb=new QLabel(header);thumb->setAttribute(Qt::WA_TransparentForMouseEvents);thumb->setPixmap(thumbnailIcon(image,40).pixmap(40,40));thumb->setFixedSize(40,40);thumb->setAlignment(Qt::AlignCenter);
+                            auto *nameLabel=new QLabel(displayName,header);nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);nameLabel->setStyleSheet("color:#ffffff;font-size:11px;font-weight:600;background:transparent;");nameLabel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+                            auto *layerWheel=new QLabel(QString::number(layerCount),header);layerWheel->setAttribute(Qt::WA_TransparentForMouseEvents);layerWheel->setObjectName("SliderValue");layerWheel->setFixedSize(30,30);layerWheel->setAlignment(Qt::AlignCenter);layerWheel->setToolTip(QString("%1 layer%2 in this artboard").arg(layerCount).arg(layerCount==1?"":"s"));
+                            cardRow->addWidget(toggle);cardRow->addWidget(thumb);cardRow->addWidget(nameLabel,1);cardRow->addWidget(layerWheel);cardColumn->addWidget(header);
+                            if(expanded){for(int i=0;i<timelineTracks.size();++i){const auto &track=timelineTracks[i];if(track.artboardSource!=path)continue;auto *layerRow=new QWidget(card);layerRow->setAttribute(Qt::WA_TransparentForMouseEvents);layerRow->setFixedHeight(32);auto *layerLayout=new QHBoxLayout(layerRow);layerLayout->setContentsMargins(34,1,8,1);layerLayout->setSpacing(7);auto *layerThumb=new QLabel(layerRow);layerThumb->setPixmap(thumbnailIcon(track.image,24).pixmap(24,24));layerThumb->setFixedSize(24,24);auto *layerName=new QLabel(track.name.isEmpty()?QString("Layer %1").arg(i+1):track.name,layerRow);layerName->setStyleSheet(QString("color:%1;font-size:10px;font-weight:600;background:transparent;").arg(track.enabled?"#d9d9e3":"#666672"));layerName->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);layerLayout->addWidget(layerThumb);layerLayout->addWidget(layerName,1);cardColumn->addWidget(layerRow);}}
+                            cardColumn->addStretch(1);QObject::connect(toggle,&QToolButton::clicked,railWidget,[path,expandedArtboards,populateRailPtr](){if(expandedArtboards->contains(path))expandedArtboards->remove(path);else expandedArtboards->insert(path);if(populateRailPtr&&*populateRailPtr)(*populateRailPtr)();});
                             railWidget->setItemWidget(item,card);
                             if (path == currentFile) {
                                 item->setSelected(true);

@@ -411,7 +411,7 @@ QToolButton#CarouselTab:hover {background:#111114;border:2px solid #ffffff;}
 QToolButton#CarouselTab:checked {background:#000000;border:2px solid #7a4dff;}
 QListWidget#BatchStrip::item,QListWidget#BatchStrip::item:selected {background:#000000;color:#ffffff;}
 QListWidget#BatchStrip::item:selected {border:1px solid #3ddcff;}
-QLabel#SliderValue {min-width:26px;min-height:26px;max-width:42px;max-height:42px;background:#ffffff;color:#000000;border-radius:13px;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 3px;}
+QLabel#SliderValue {min-width:26px;min-height:26px;max-width:24px;max-height:24px;background:transparent;color:#ffffff;border-radius:13px;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 3px;}
 QWidget#SettingsHost,QScrollArea#TabsCarousel,QScrollArea#SubSettingsRail,QWidget#ActiveSettingCard,QTabWidget#SettingsScrollArea::pane {background:#000000;border:none;}
 QToolButton#SubRailIcon {background:#000000;color:#ffffff;border:1px solid #ffffff;border-radius:19px;font-size:10px;font-weight:700;padding:0;}
 QToolButton#SubRailIcon:hover {background:#16161b;border:2px solid #ffffff;}

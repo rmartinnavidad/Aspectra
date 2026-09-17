@@ -4,18 +4,14 @@
 #include "Processing.h"
 #include "RasterToolEngine.h"
 
-struct PreviewArtboard
-{
+struct PreviewArtboard {
     QString id;
     QString name;
-
     QPointF position;
     QSize size;
-
     QImage image;
-
-    bool active = false;
-    bool visible = true;
+    bool active=false;
+    bool visible=true;
 };
 
 class PreviewWidget : public QWidget {
@@ -23,13 +19,10 @@ class PreviewWidget : public QWidget {
 public:
     explicit PreviewWidget(QWidget *parent=nullptr);
     void setFrame(const QImage &image);
-
     void setArtboards(const QVector<PreviewArtboard> &items);
     void clearArtboards();
     void setActiveArtboard(const QString &id);
-
     QVector<PreviewArtboard> artboards() const { return workspaceArtboards; }
-
     void setTextureFrame(const QImage &image);
     void clearTextureFrame();
     void setTextureSphereInteractive(bool on){sphereInteractive=on;if(!on)sphereDragging=false;}
@@ -42,17 +35,15 @@ public:
     void setSelectionMask(const QImage &image);
     void clearSelectionMask();
     void setCanvasTool(CanvasTool value,int diameter=48){canvasTool=value;toolDiameter=qMax(1,diameter);toolPath.clear();maskPainting=false;eyedropper=false;setCursor(value==CanvasTool::None?Qt::ArrowCursor:Qt::CrossCursor);}
-    void setEyedropper(bool on){ eyedropper=on; setCursor(on?Qt::CrossCursor:Qt::ArrowCursor); }
-    void setMaskBrush(bool add,int size){ maskPainting=true;maskAdd=add;maskSize=size;setCursor(Qt::CrossCursor); }
+    void setEyedropper(bool on){eyedropper=on;setCursor(on?Qt::CrossCursor:Qt::ArrowCursor);}
+    void setMaskBrush(bool add,int size){maskPainting=true;maskAdd=add;maskSize=size;setCursor(Qt::CrossCursor);}
     void setAdjustments(const Adjustments &adjustments,QSize size,const RecolorPreset *preset=nullptr);
     QImage rendered() const { return processed; }
-    // The final painted image bounds, used by the UI regression test to make
-    // sure focus zoom really covers the preview rather than leaving margins.
     QRectF displayedFrameRect() const { return frameBox(); }
     void setGuides(bool visible,QMarginsF safe);
 signals:
     void fullScreenRequested();
-    void marginsDragged(QMarginsF safe, QMarginsF padding);
+    void marginsDragged(QMarginsF safe,QMarginsF padding);
     void colorSampled(QColor color);
     void maskBrushed(QPointF normalized,bool add,int size);
     void toolStroke(QPointF normalized,CanvasTool tool,int diameter,Qt::KeyboardModifiers modifiers);
@@ -73,14 +64,12 @@ protected:
     void mouseMoveEvent(QMouseEvent *) override;
     void mouseReleaseEvent(QMouseEvent *) override;
 private:
-    QImage frame, textureFrame, vectorTraceFrame, layerMask, selectionMask, processed;
+    QImage frame,textureFrame,vectorTraceFrame,layerMask,selectionMask,processed;
     QVector<PreviewArtboard> workspaceArtboards;
     QString activeArtboardId;
-
     QRectF artboardScreenRect(const PreviewArtboard &artboard) const;
     QRectF workspaceBounds() const;
-    
-    bool textureActive=false, vectorTraceActive=false,sphereInteractive=false,sphereDragging=false;
+    bool textureActive=false,vectorTraceActive=false,sphereInteractive=false,sphereDragging=false;
     double viewZoom=1.0;
     Adjustments settings;
     QSize target{512,512};

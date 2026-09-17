@@ -1036,13 +1036,9 @@ void MainWindow::buildUi(){
                     }
                     return result;
                 };
-                railWidget->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
-                QObject::connect(railWidget->viewport(), &QWidget::customContextMenuRequested, railWidget,
-                    [this, railWidget, detailRowList, populateRailPtr, populateLayersPtr, createArtboardAfter, deleteArtboard, renderArtboard](const QPoint &position) {
-                    auto *item = railWidget->itemAt(position);
-                    const QString contextArtboardId = item ? item->data(Qt::UserRole).toString() : QString();
+                auto showArtboardContextMenu = [this, railWidget, detailRowList, populateRailPtr, populateLayersPtr, createArtboardAfter, deleteArtboard, renderArtboard](const QString &contextArtboardId, const QPoint &globalPosition) {
                     if (contextArtboardId.isEmpty() || !canvasLayers.contains(contextArtboardId)) return;
-                    QMenu menu(railWidget);
+                    QMenu menu(this);
                     auto *rename = menu.addAction("Rename Artboard");
                     auto *duplicate = menu.addAction("Duplicate Artboard");
                     auto *remove = menu.addAction("Delete Artboard");
@@ -1060,17 +1056,9 @@ void MainWindow::buildUi(){
                     auto *lockPosition = menu.addAction("Lock Artboard Position");
                     lockPosition->setCheckable(true);lockPosition->setChecked(canvasLayers.value(contextArtboardId).lockPosition);
                     menu.addSeparator();
-                    const bool hasMask = !canvasLayers.value(contextArtboardId).mask.isNull();
-                    auto *editMask = hasMask ? menu.addAction("Edit Layer Mask") : nullptr;
-                    auto *addMask = !hasMask ? menu.addAction("Add Layer Mask") : nullptr;
-                    auto *invertMask = hasMask ? menu.addAction("Invert Layer Mask") : nullptr;
-                    auto *clearMaskWhite = hasMask ? menu.addAction("Clear Layer Mask to White") : nullptr;
-                    auto *clearMaskBlack = hasMask ? menu.addAction("Clear Layer Mask to Black") : nullptr;
-                    auto *deleteMask = hasMask ? menu.addAction("Delete Layer Mask") : nullptr;
-                    menu.addSeparator();
                     auto *quickExport = menu.addAction("Quick Export Artboard");
                     auto *exportAs = menu.addAction("Export Artboard…");
-                    QAction *chosen = menu.exec(railWidget->viewport()->mapToGlobal(position));
+                    QAction *chosen = menu.exec(globalPosition);
                     if (!chosen) return;
                     if (chosen == rename) {
                         bool ok = false;
@@ -1118,35 +1106,6 @@ void MainWindow::buildUi(){
                         if (contextArtboardId == currentFile) refresh();(*populateRailPtr)();autosaveProject();
                     } else if (chosen == lockPosition) {
                         canvasLayers[contextArtboardId].lockPosition = lockPosition->isChecked();autosaveProject();
-                    } else if (chosen == addMask) {
-                        auto &layer = canvasLayers[contextArtboardId];
-                        const QSize maskSize = layer.nativeSize.isValid() ? layer.nativeSize : (contextArtboardId == currentFile ? original.size() : QSize(widthInput->value(), heightInput->value()));
-                        layer.mask = QImage(maskSize, QImage::Format_Grayscale8);layer.mask.fill(255);
-                        if (contextArtboardId == currentFile) { preview->setLayerMask(layer.mask);preview->setMaskEditMode(false);refresh(); }
-                        (*populateRailPtr)();autosaveProject();status->setText("Layer mask added");
-                    } else if (chosen == editMask) {
-                        if (currentFile != contextArtboardId) selectFile(contextArtboardId);
-                        preview->setLayerMask(canvasLayers[contextArtboardId].mask);preview->setMaskEditMode(true);
-                        status->setText("Mask edit mode · drag to reveal · Shift+drag to hide");
-                    } else if (chosen == invertMask) {
-                        auto &maskImage = canvasLayers[contextArtboardId].mask;
-                        if (!maskImage.isNull()) {
-                            maskImage = maskImage.convertToFormat(QImage::Format_Grayscale8);
-                            for (int y = 0; y < maskImage.height(); ++y) { uchar *line = maskImage.scanLine(y);for (int x = 0; x < maskImage.width(); ++x) line[x] = uchar(255 - line[x]); }
-                            if (contextArtboardId == currentFile) { preview->setLayerMask(maskImage);refresh(); }
-                            (*populateRailPtr)();autosaveProject();status->setText("Layer mask inverted");
-                        }
-                    } else if (chosen == clearMaskWhite || chosen == clearMaskBlack) {
-                        auto &maskImage = canvasLayers[contextArtboardId].mask;
-                        if (!maskImage.isNull()) {
-                            maskImage.fill(chosen == clearMaskWhite ? 255 : 0);
-                            if (contextArtboardId == currentFile) { preview->setLayerMask(maskImage);refresh(); }
-                            (*populateRailPtr)();autosaveProject();status->setText(chosen == clearMaskWhite ? "Layer mask cleared to white" : "Layer mask cleared to black");
-                        }
-                    } else if (chosen == deleteMask) {
-                        canvasLayers[contextArtboardId].mask = {};
-                        if (contextArtboardId == currentFile) { preview->setMaskEditMode(false);preview->setLayerMask({});refresh(); }
-                        (*populateRailPtr)();autosaveProject();status->setText("Layer mask deleted");
                     } else if (chosen == quickExport || chosen == exportAs) {
                         QString fileName = canvasLayers[contextArtboardId].name;
                         fileName.replace(QRegularExpression("[^A-Za-z0-9._-]+"), "_");
@@ -1157,7 +1116,18 @@ void MainWindow::buildUi(){
                             else status->setText("Artboard exported · " + target);
                         }
                     }
-                });
+                };
+                railWidget->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
+                QObject::connect(railWidget->viewport(), &QWidget::customContextMenuRequested, railWidget,
+                    [railWidget, showArtboardContextMenu](const QPoint &position) {
+                        auto *item = railWidget->itemAt(position);
+                        const QString contextArtboardId = item ? item->data(Qt::UserRole).toString() : QString();
+                        if (!contextArtboardId.isEmpty()) showArtboardContextMenu(contextArtboardId, railWidget->viewport()->mapToGlobal(position));
+                    });
+                QObject::connect(preview, &PreviewWidget::artboardContextMenuRequested, this,
+                    [showArtboardContextMenu](const QString &artboardId, const QPoint &globalPosition) {
+                        showArtboardContextMenu(artboardId, globalPosition);
+                    });
                 detailRowList->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
                 QObject::connect(detailRowList->viewport(), &QWidget::customContextMenuRequested, detailRowList,
                     [this, detailRowList, populateLayersPtr](const QPoint &position) {

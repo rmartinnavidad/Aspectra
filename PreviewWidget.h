@@ -56,6 +56,7 @@ signals:
     void sphereZoomed(int delta);
     void viewZoomChanged(double value);
     void artboardSelected(QString id);
+    void artboardContextMenuRequested(QString id,QPoint globalPosition);
 protected:
     void paintEvent(QPaintEvent *) override;
     void resizeEvent(QResizeEvent *) override;

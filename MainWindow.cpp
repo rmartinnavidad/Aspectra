@@ -697,11 +697,12 @@ void MainWindow::buildUi(){
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail (Locked perfectly to 240px width)
+                // Page 0: Horizontal Artboard Rail (Locked to 240px width)
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
                 railWidget->setFixedHeight(96);
+                railWidget->setSpacing(8);
                 railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
                 railWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 railWidget->setDragEnabled(true);
@@ -710,7 +711,7 @@ void MainWindow::buildUi(){
                 railWidget->setDragDropMode(QAbstractItemView::InternalMove);
                 railWidget->setStyleSheet(
                     "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
-                    "QListWidget::item { width: 240px; height: 64px; background: #000000; border: 1px solid #2d2d35; border-radius: 8px; margin-right: 8px; color: #ffffff; font-size: 10px; font-weight: 600; padding: 4px; }"
+                    "QListWidget::item { width: 240px; height: 64px; background: #000000; border: 1px solid #2d2d35; border-radius: 8px; color: #ffffff; font-size: 10px; font-weight: 600; padding: 4px; }"
                     "QListWidget::item:selected { border: 2px solid #7a4dff; background: #101015; }"
                 );
                 stackWidget->addWidget(railWidget);
@@ -724,37 +725,44 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(detailRowList);
 
+                auto activeArtboard = std::make_shared<QString>();
                 std::function<void()> populateRail;
                 std::function<void(const QString&)> populateLayers;
 
-                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
+                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, activeArtboard]() {
                     railWidget->clear();
-                    QStringList paths = this->batch.files;
-                    if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.prepend(currentFile);
-                    for (auto it = canvasLayers.cbegin(); it != canvasLayers.cend(); ++it)
-                        if (!paths.contains(it.key())) paths.append(it.key());
 
-                    if (paths.isEmpty()) {
-                        auto *item = new QListWidgetItem("📁 Artboard 1");
-                        item->setData(Qt::UserRole, QString());
+                    // Ensure the current active document is registered in batch.files
+                    if (!currentFile.isEmpty() && !batch.files.contains(currentFile)) {
+                        batch.files.append(currentFile);
+                    }
+
+                    // Populate strictly from batch.files to preserve explicit left-to-right creation order
+                    for (const QString &path : batch.files) {
+                        const auto &layer = canvasLayers[path];
+                        QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
+                        if (displayName.isEmpty()) displayName = "Artboard";
+                        auto *item = new QListWidgetItem("📁 " + displayName);
+                        item->setData(Qt::UserRole, path);
+                        item->setSizeHint(QSize(240, 64));
                         railWidget->addItem(item);
-                    } else {
-                        for (const QString &path : paths) {
-                            const auto &layer = canvasLayers[path];
-                            QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
-                            auto *item = new QListWidgetItem("📁 " + displayName);
-                            item->setData(Qt::UserRole, path);
-                            railWidget->addItem(item);
-                            if (path == currentFile) item->setSelected(true);
+                        if (path == currentFile) {
+                            item->setSelected(true);
+                            railWidget->setCurrentItem(item);
                         }
                     }
+
+                    activeArtboard->clear();
                     stackWidget->setCurrentIndex(0);
                     backBtn->hide();
                     crumbLabel->setText("Artboards");
                     blendCombo->setCurrentText("Pass Through");
                 };
 
-                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
+                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, activeArtboard](const QString &sourcePath) {
+                    if (sourcePath.isEmpty()) return;
+                    *activeArtboard = sourcePath;
+                    if (sourcePath != currentFile) selectFile(sourcePath);
                     detailRowList->clear();
 
                     auto createLayerRow = [this](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
@@ -816,7 +824,9 @@ void MainWindow::buildUi(){
                     baseItem->setSizeHint(QSize(0, 40));
                     bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
                     bool hasMask = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].mask.isNull();
-                    QString baseName = sourcePath.isEmpty() ? "Canvas" : (canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() ? canvasLayers[sourcePath].name : QFileInfo(sourcePath).completeBaseName());
+                    QString baseName = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() 
+                                       ? canvasLayers[sourcePath].name 
+                                       : (sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName());
                     
                     auto *baseWidget = createLayerRow(baseName, baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
                         if (canvasLayers.contains(sourcePath)) {
@@ -830,7 +840,6 @@ void MainWindow::buildUi(){
 
                     for (int i = 0; i < timelineTracks.size(); ++i) {
                         const auto &track = timelineTracks[i];
-                        // Filter properly so layers only show up under their owning Artboard
                         if (!track.artboardSource.isEmpty() && track.artboardSource != sourcePath) continue;
 
                         QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
@@ -857,8 +866,10 @@ void MainWindow::buildUi(){
                 QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [this, populateLayers](QListWidgetItem *item) {
                     if (item) {
                         QString path = item->data(Qt::UserRole).toString();
-                        if (path != currentFile) selectFile(path);
-                        populateLayers(path);
+                        if (!path.isEmpty()) {
+                            if (path != currentFile) selectFile(path);
+                            populateLayers(path);
+                        }
                     }
                 });
 
@@ -866,7 +877,7 @@ void MainWindow::buildUi(){
                 populateRail();
 
                 // =============================================================
-                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Fully Wired)
+                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Context-Aware)
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
                 actionRow->setSpacing(8);
@@ -888,57 +899,66 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionRow);
 
-                // --- DATA-BOUND ACTION HANDLERS ---
-                
-                // 1. New Artboard / New Layer (+)
-                QObject::connect(newLayerBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget, populateRail, populateLayers]() {
+                auto actionArtboardPath = [this, stackWidget, railWidget, activeArtboard]() {
+                    if (stackWidget->currentIndex() == 1) return *activeArtboard;
+                    auto *selected = railWidget->currentItem();
+                    return selected ? selected->data(Qt::UserRole).toString() : currentFile;
+                };
+
+                // 1. New Artboard / New Layer Button (+)
+                QObject::connect(newLayerBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget, detailRowList, activeArtboard, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Create Artboard & Add exactly to the right of the current one
+                        // Artboards view: Append to the right edge of batch.files
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
                         CanvasLayer layer;
                         layer.source = artboardId;
                         layer.name = QString("Artboard %1").arg(batch.files.size() + 1);
                         layer.nativeSize = QSize(widthInput->value(), heightInput->value());
                         canvasLayers[artboardId] = layer;
-                        
-                        int insertIdx = batch.files.indexOf(currentFile);
-                        if (insertIdx >= 0) batch.files.insert(insertIdx + 1, artboardId);
-                        else batch.files.append(artboardId);
-                        
+
+                        batch.files.append(artboardId);
                         updateBatchLabel();
                         selectFile(artboardId);
                         populateRail();
-                        
-                        // Ensure visibility scrolls to the new right-side creation
-                        for (int i = 0; i < railWidget->count(); ++i) {
-                            if (railWidget->item(i)->data(Qt::UserRole).toString() == artboardId) {
-                                railWidget->setCurrentRow(i);
-                                railWidget->scrollToItem(railWidget->item(i), QAbstractItemView::PositionAtRight);
-                                break;
-                            }
+
+                        if (railWidget->count() > 0) {
+                            railWidget->setCurrentRow(railWidget->count() - 1);
+                            railWidget->scrollToItem(railWidget->item(railWidget->count() - 1), QAbstractItemView::PositionAtRight);
                         }
-                        status->setText("New artboard added");
+                        status->setText("New artboard added to the right");
                     } else {
-                        // Create Layer inside Active Artboard
+                        // Layers view: Add track layer to the active artboard
+                        const QString sourcePath = *activeArtboard;
+                        if (sourcePath.isEmpty()) return;
+
                         TimelineTrack track;
                         track.type = TimelineTrack::Image;
-                        track.artboardSource = currentFile; // The Codex Architectural Fix
-                        track.name = QString("Layer %1").arg(timelineTracks.size() + 1);
-                        track.image = QImage(widthInput->value(), heightInput->value(), QImage::Format_ARGB32);
+                        track.artboardSource = sourcePath;
+                        const int ownedCount = std::count_if(timelineTracks.cbegin(), timelineTracks.cend(), [&sourcePath](const TimelineTrack &item) {
+                            return item.artboardSource == sourcePath && item.type == TimelineTrack::Image;
+                        });
+                        track.name = QString("Layer %1").arg(ownedCount + 1);
+                        const QSize size = canvasLayers.contains(sourcePath) && canvasLayers[sourcePath].nativeSize.isValid()
+                                           ? canvasLayers[sourcePath].nativeSize 
+                                           : QSize(widthInput->value(), heightInput->value());
+                        track.image = QImage(size, QImage::Format_ARGB32);
                         track.image.fill(Qt::transparent);
                         track.start = 0;
                         track.end = qMax(5., media.duration);
+
                         timelineTracks.append(track);
                         updateTrackPanel();
                         refresh();
-                        populateLayers(currentFile);
+                        populateLayers(sourcePath);
+                        detailRowList->setCurrentRow(detailRowList->count() - 1);
                         status->setText("New layer added");
                     }
                 });
 
-                // 2. Delete (Trash)
-                QObject::connect(delBtn, &QToolButton::clicked, this, [this, stackWidget, detailRowList, railWidget, populateRail, populateLayers]() {
+                // 2. Delete Button (Trash)
+                QObject::connect(delBtn, &QToolButton::clicked, this, [this, stackWidget, detailRowList, railWidget, activeArtboard, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 1) {
+                        // Delete Layer Track
                         auto *selected = detailRowList->currentItem();
                         if (selected && selected->data(Qt::UserRole).toString() == "track") {
                             int idx = selected->data(Qt::UserRole + 2).toInt();
@@ -946,71 +966,92 @@ void MainWindow::buildUi(){
                                 timelineTracks.removeAt(idx);
                                 updateTrackPanel();
                                 refresh();
-                                populateLayers(currentFile);
+                                populateLayers(*activeArtboard);
                                 status->setText("Layer deleted");
                             }
                         }
                     } else {
+                        // Delete Artboard: Fall back gracefully to currentFile if no item is highlighted
+                        QString targetPath;
                         auto *selected = railWidget->currentItem();
                         if (selected) {
-                            QString path = selected->data(Qt::UserRole).toString();
-                            if (!path.isEmpty()) {
-                                batch.files.removeOne(path);
-                                canvasLayers.remove(path);
-                                timelineTracks.erase(std::remove_if(timelineTracks.begin(), timelineTracks.end(), [&path](const TimelineTrack &track) { return track.artboardSource == path; }), timelineTracks.end());
-                                updateBatchLabel();
-                                updateTrackPanel();
-                                if (currentFile == path) {
-                                    if (!batch.files.isEmpty()) selectFile(batch.files.last());
-                                    else clearMedia();
-                                }
+                            targetPath = selected->data(Qt::UserRole).toString();
+                        } else if (!currentFile.isEmpty()) {
+                            targetPath = currentFile;
+                        } else if (!batch.files.isEmpty()) {
+                            targetPath = batch.files.last();
+                        }
+
+                        if (!targetPath.isEmpty()) {
+                            const int removedIndex = batch.files.indexOf(targetPath);
+                            batch.files.removeOne(targetPath);
+                            canvasLayers.remove(targetPath);
+
+                            // Purge any layers owned by this artboard
+                            timelineTracks.erase(std::remove_if(timelineTracks.begin(), timelineTracks.end(), [&targetPath](const TimelineTrack &track) {
+                                return track.artboardSource == targetPath;
+                            }), timelineTracks.end());
+
+                            updateTrackPanel();
+                            updateBatchLabel();
+
+                            if (batch.files.isEmpty()) {
+                                createNewProject(widthInput->value(), heightInput->value(), 300, true, "RGB", "sRGB IEC61966-2.1", Qt::transparent);
+                            } else {
+                                int nextIndex = qBound(0, removedIndex, int(batch.files.size()) - 1);
+                                selectFile(batch.files[nextIndex]);
                             }
+
                             populateRail();
                             status->setText("Artboard removed");
                         }
                     }
                 });
 
-                // 3. Layer Mask ([Mask])
-                QObject::connect(maskBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget, populateLayers]() {
-                    QString targetFile = stackWidget->currentIndex() == 1 ? currentFile : (railWidget->currentItem() ? railWidget->currentItem()->data(Qt::UserRole).toString() : currentFile);
-                    if (targetFile.isEmpty()) return;
-                    if (targetFile != currentFile) selectFile(targetFile);
-                    
-                    auto &layer = canvasLayers[targetFile];
+                // 3. Layer Mask Button
+                QObject::connect(maskBtn, &QToolButton::clicked, this, [this, stackWidget, actionArtboardPath, populateLayers]() {
+                    const QString path = actionArtboardPath();
+                    if (path.isEmpty() || !canvasLayers.contains(path)) return;
+                    if (path != currentFile) selectFile(path);
+
+                    auto &layer = canvasLayers[path];
                     QSize sz = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
                     layer.mask = QImage(sz, QImage::Format_Grayscale8);
                     layer.mask.fill(255);
                     preview->setLayerMask(layer.mask);
-                    if (stackWidget->currentIndex() == 1) populateLayers(targetFile);
-                    status->setText("Editable layer mask created");
+                    if (stackWidget->currentIndex() == 1) populateLayers(path);
+                    status->setText("Artboard mask created");
                 });
 
-                // 4. Adjustment Jump ([Adj])
-                QObject::connect(adjBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget]() {
-                    QString targetFile = stackWidget->currentIndex() == 1 ? currentFile : (railWidget->currentItem() ? railWidget->currentItem()->data(Qt::UserRole).toString() : currentFile);
-                    if (targetFile.isEmpty()) return;
-                    if (targetFile != currentFile) selectFile(targetFile);
-                    
-                    canvasLayers[targetFile].hasOverride = true;
-                    canvasLayers[targetFile].overrideAdjustments = adjustments();
+                // 4. Adjustment Button
+                QObject::connect(adjBtn, &QToolButton::clicked, this, [this, actionArtboardPath]() {
+                    const QString path = actionArtboardPath();
+                    if (path.isEmpty() || !canvasLayers.contains(path)) return;
+                    if (path != currentFile) selectFile(path);
+                    canvasLayers[path].hasOverride = true;
+                    canvasLayers[path].overrideAdjustments = adjustments();
                     if (perImageOverride) perImageOverride->setChecked(true);
                     tabs->setCurrentIndex(1);
-                    status->setText("Adjustments active");
+                    status->setText("Adjustments active for " + canvasLayers[path].name);
                 });
 
-                // 5. Group / Folder
-                QObject::connect(grpBtn, &QToolButton::clicked, this, [this, stackWidget, populateLayers]() {
+                // 5. Group / Folder Button
+                QObject::connect(grpBtn, &QToolButton::clicked, this, [this, actionArtboardPath, populateLayers]() {
+                    const QString path = actionArtboardPath();
+                    if (path.isEmpty() || !canvasLayers.contains(path)) return;
                     TimelineTrack track;
                     track.type = TimelineTrack::Effect;
                     track.isGroup = true;
-                    track.artboardSource = currentFile; // Bound to active view
-                    track.name = QString("Group %1").arg(timelineTracks.size() + 1);
+                    track.artboardSource = path;
+                    const int ownedCount = std::count_if(timelineTracks.cbegin(), timelineTracks.cend(), [&path](const TimelineTrack &item) {
+                        return item.artboardSource == path && item.isGroup;
+                    });
+                    track.name = QString("Group %1").arg(ownedCount + 1);
                     timelineTracks.append(track);
                     updateTrackPanel();
                     refresh();
-                    if (stackWidget->currentIndex() == 1) populateLayers(currentFile);
-                    status->setText("New group folder created");
+                    populateLayers(path);
+                    status->setText("New group added to " + canvasLayers[path].name);
                 });
 
                 settingCard->show();

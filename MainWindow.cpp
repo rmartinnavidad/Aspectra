@@ -621,7 +621,6 @@ void MainWindow::buildUi(){
                 topLayout->setContentsMargins(0, 0, 0, 0);
                 topLayout->setSpacing(2);
 
-                // Row 1: Lock segment + Blend Mode
                 auto *row1 = new QHBoxLayout;
                 row1->setSpacing(4);
 
@@ -645,7 +644,6 @@ void MainWindow::buildUi(){
                 row1->addWidget(blendCombo);
                 topLayout->addLayout(row1);
 
-                // Row 2 & 3: Slim Opacity & Fill Sliders
                 auto createSlimSliderRow = [](const QString &title, int defaultVal) {
                     auto *sliderRow = new QHBoxLayout;
                     sliderRow->setSpacing(6);
@@ -683,90 +681,92 @@ void MainWindow::buildUi(){
                 settingCardLayout->addWidget(topContainer);
 
                 // =============================================================
-                // 2. MIDDLE SECTION: HORIZONTAL ARTBOARD RAIL & BREADCRUMB
+                // 2. MIDDLE SECTION: NAVIGATION & VIEW SWITCHER (Rail <-> Rows)
                 // =============================================================
                 auto *navRow = new QHBoxLayout;
                 navRow->setSpacing(4);
                 auto *backBtn = new QToolButton;
-                backBtn->setText("‹ Back");
+                backBtn->setText("‹ Back to Artboards");
                 backBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
                 backBtn->setStyleSheet("QToolButton { color: #3ddcff; font-size: 11px; font-weight: bold; background: transparent; border: none; padding: 0; }"
                                        "QToolButton:hover { color: #ffffff; }");
                 backBtn->hide();
 
-                auto *crumbLabel = new QLabel("Artboards");
+                auto *crumbLabel = new QLabel("Artboards (Horizontal Rail)");
                 crumbLabel->setStyleSheet("color: #b9d1ff; font-size: 10px; font-weight: 700; letter-spacing: 1px;");
 
                 navRow->addWidget(backBtn);
                 navRow->addWidget(crumbLabel, 1);
                 settingCardLayout->addLayout(navRow);
 
-                // Horizontal Artboard / Layer Rail using QListWidget configured horizontally
-                auto *layerList = new QListWidget;
-                layerList->setObjectName("HorizontalArtboardRail");
-                layerList->setFlow(QListView::LeftToRight);
-                layerList->setWrapping(false);
-                layerList->setFixedHeight(76);
-                layerList->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-                layerList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-                
-                // --- ADD THESE FOUR LINES TO ENABLE DRAG-AND-DROP REORDERING ---
-                layerList->setDragEnabled(true);
-                layerList->setAcceptDrops(true);
-                layerList->setDropIndicatorShown(true);
-                layerList->setDragDropMode(QAbstractItemView::InternalMove);
-                // -------------------------------------------------------------
+                // Container for switching between the Horizontal Rail and Detailed Layer Rows
+                auto *stackWidget = new QStackedWidget;
+                settingCardLayout->addWidget(stackWidget, 1);
 
-                layerList->setStyleSheet(
+                // Page 0: Horizontal Artboard Rail
+                auto *railWidget = new QListWidget;
+                railWidget->setFlow(QListView::LeftToRight);
+                railWidget->setWrapping(false);
+                railWidget->setFixedHeight(86);
+                railWidget->setDragEnabled(true);
+                railWidget->setAcceptDrops(true);
+                railWidget->setDropIndicatorShown(true);
+                railWidget->setDragDropMode(QAbstractItemView::InternalMove);
+                railWidget->setStyleSheet(
                     "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 4px; }"
-                    "QListWidget::item { width: 88px; height: 62px; background: #12151c; border: 1px solid #242936; border-radius: 6px; margin-right: 6px; color: #e0e4ee; font-size: 10px; font-weight: 600; padding: 4px; }"
+                    "QListWidget::item { width: 92px; height: 70px; background: #12151c; border: 1px solid #242936; border-radius: 6px; margin-right: 6px; color: #e0e4ee; font-size: 10px; font-weight: 600; padding: 4px; }"
                     "QListWidget::item:selected { border: 2px solid #3ddcff; background: #161b26; color: #ffffff; }"
                 );
-                settingCardLayout->addWidget(layerList);
+                stackWidget->addWidget(railWidget);
 
-                // Populate Horizontal Rail Levels
-                auto populateRoot = [layerList, backBtn, crumbLabel, blendCombo]() {
-                    layerList->clear();
-                    auto *ab = new QListWidgetItem("📁 Artboard 1");
-                    ab->setData(Qt::UserRole, "artboard");
-                    layerList->addItem(ab);
-                    
-                    auto *ab2 = new QListWidgetItem("📁 Artboard 2");
-                    ab2->setData(Qt::UserRole, "artboard");
-                    layerList->addItem(ab2);
+                // Page 1: Detailed Professional Layer Rows ([👁] [Thumb] [Mask] Name [fx] [🔗] [>])
+                auto *detailRowList = new QListWidget;
+                detailRowList->setStyleSheet(
+                    "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 2px; }"
+                    "QListWidget::item { height: 36px; border-bottom: 1px solid #12151d; color: #e0e4ee; font-size: 11px; padding: 2px 4px; }"
+                    "QListWidget::item:selected { background: #161b26; border: 1px solid #3ddcff; border-radius: 4px; color: #ffffff; }"
+                );
+                stackWidget->addWidget(detailRowList);
 
-                    backBtn->hide();
-                    crumbLabel->setText("Artboards (Horizontal Scroll)");
-                    blendCombo->setCurrentText("Pass Through");
-                };
-
-                auto populateGroupsOrLayers = [layerList, backBtn, crumbLabel, blendCombo](const QString &parentName) {
-                    layerList->clear();
-                    auto *grp = new QListWidgetItem("📂 Group 1");
-                    grp->setData(Qt::UserRole, "group");
-                    layerList->addItem(grp);
-
-                    auto *l1 = new QListWidgetItem("🖼️ Layer 1");
-                    l1->setData(Qt::UserRole, "layer");
-                    layerList->addItem(l1);
-
-                    backBtn->show();
-                    crumbLabel->setText(parentName);
-                    blendCombo->setCurrentText("Normal");
-                };
-
-                QObject::connect(layerList, &QListWidget::itemDoubleClicked, [populateGroupsOrLayers](QListWidgetItem *item) {
-                    QString type = item->data(Qt::UserRole).toString();
-                    if (type == "artboard" || type == "group") {
-                        populateGroupsOrLayers(item->text().section(' ', 1));
+                // Populate Root Rail
+                auto populateRail = [railWidget, backBtn, crumbLabel, stackWidget]() {
+                    railWidget->clear();
+                    for (int i = 1; i <= 2; ++i) {
+                        auto *item = new QListWidgetItem(QString("📁 Artboard %1").arg(i));
+                        item->setData(Qt::UserRole, i);
+                        railWidget->addItem(item);
                     }
+                    stackWidget->setCurrentIndex(0);
+                    backBtn->hide();
+                    crumbLabel->setText("Artboards (Horizontal Rail)");
+                };
+
+                // Populate Detailed Layer Rows with Masks, FX badges, and Thumbnails
+                auto populateLayerRows = [detailRowList, backBtn, crumbLabel, stackWidget](const QString &artboardName) {
+                    detailRowList->clear();
+                    
+                    // Sample professional layer rows matching your design spec
+                    QStringList layerNames = {"Background Image", "Subject Composite", "Color Grade Adjustment", "Lighting Glow"};
+                    for (int i = 0; i < layerNames.size(); ++i) {
+                        auto *item = new QListWidgetItem(QString("👁  [🖼️] [🔲]  %1   fx  🔗").arg(layerNames[i]));
+                        item->setFlags(item->flags() | Qt::ItemIsEditable);
+                        detailRowList->addItem(item);
+                    }
+
+                    stackWidget->setCurrentIndex(1);
+                    backBtn->show();
+                    crumbLabel->setText("Artboards / " + artboardName);
+                };
+
+                QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayerRows](QListWidgetItem *item) {
+                    if (item) populateLayerRows(item->text().section(' ', 1));
                 });
 
-                QObject::connect(backBtn, &QToolButton::clicked, populateRoot);
-                populateRoot();
+                QObject::connect(backBtn, &QToolButton::clicked, populateRail);
+                populateRail();
 
                 // =============================================================
-                // 3. BOTTOM SECTION: COMPACT ACTION STRIP
+                // 3. BOTTOM SECTION: COMPACT ACTION STRIP ([Mask] [Adj] [Folder] [New Layer] [Delete])
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
                 actionRow->setSpacing(6);
@@ -777,10 +777,10 @@ void MainWindow::buildUi(){
                 auto *adjBtn = new QToolButton; adjBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/editor_adjustments.png")); adjBtn->setToolTip("New Adjustment");
                 auto *grpBtn = new QToolButton; grpBtn->setIcon(settingIcon("archive")); grpBtn->setToolTip("New Folder/Group");
                 auto *newLayerBtn = new QToolButton; newLayerBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/add layer.png")); newLayerBtn->setToolTip("New Layer");
-                auto *delBtn = new QToolButton; delBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00Addons/custom add ons/utilities/ASPECTRA/tools/delete anchor point tool.png")); delBtn->setToolTip("Delete");
+                auto *delBtn = new QToolButton; delBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/delete anchor point tool.png")); delBtn->setToolTip("Delete");
 
                 for (auto *btn : {maskBtn, adjBtn, grpBtn, newLayerBtn, delBtn}) {
-                    btn->setFixedSize(24, 24);
+                    btn->setFixedSize(26, 26);
                     btn->setIconSize(QSize(14, 14));
                     btn->setStyleSheet("QToolButton { background: #12151c; border: 1px solid #242936; border-radius: 4px; }"
                                        "QToolButton:hover { background: #1d222e; border-color: #3ddcff; }");
@@ -790,7 +790,7 @@ void MainWindow::buildUi(){
 
                 settingCard->show();
                 tabs->hide();
-                settingsHost->setMinimumHeight(qMin(320, settingsHost->layout()->sizeHint().height()));
+                settingsHost->setMinimumHeight(qMin(340, settingsHost->layout()->sizeHint().height()));
                 settingsHost->updateGeometry();
                 if (auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
                     outer->invalidate();

@@ -32,6 +32,8 @@ public:
     double viewZoomValue() const { return viewZoom; }
     void adjustViewZoomFromInput(int angleDelta,int pixelDelta,Qt::KeyboardModifiers modifiers=Qt::NoModifier);
     void setLayerMask(const QImage &image);
+    void setMaskEditMode(bool enabled);
+    bool isMaskEditMode() const { return maskEditMode; }
     void setSelectionMask(const QImage &image);
     void clearSelectionMask();
     void setCanvasTool(CanvasTool value,int diameter=48){canvasTool=value;toolDiameter=qMax(1,diameter);toolPath.clear();maskPainting=false;eyedropper=false;setCursor(value==CanvasTool::None?Qt::ArrowCursor:Qt::CrossCursor);}
@@ -69,7 +71,7 @@ private:
     QString activeArtboardId;
     QRectF artboardScreenRect(const PreviewArtboard &artboard) const;
     QRectF workspaceBounds() const;
-    bool textureActive=false,vectorTraceActive=false,sphereInteractive=false,sphereDragging=false;
+    bool textureActive=false,vectorTraceActive=false,sphereInteractive=false,sphereDragging=false,maskEditMode=false;
     double viewZoom=1.0;
     Adjustments settings;
     QSize target{512,512};

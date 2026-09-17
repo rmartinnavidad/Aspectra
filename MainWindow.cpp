@@ -861,7 +861,7 @@ void MainWindow::buildUi(){
                 populateRail();
 
                 // =============================================================
-                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Fully Functional & Context-Aware)
+                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Robust & Fully Functional)
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
                 actionRow->setSpacing(8);
@@ -883,12 +883,12 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionRow);
 
-                // --- FULLY FUNCTIONAL CONTEXT-AWARE ACTION HANDLERS ---
+                // --- ROBUST ACTION HANDLERS ---
                 
                 // 1. New Artboard / New Layer Button (+)
                 QObject::connect(newLayerBtn, &QToolButton::clicked, [this, stackWidget, railWidget, populateRail, populateLayers]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards mode: Create and append a new artboard right next to existing ones
+                        // Artboards mode: Append a brand new artboard right next to existing ones without wiping state
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128);
                         CanvasLayer layer;
                         layer.source = artboardId;
@@ -898,10 +898,9 @@ void MainWindow::buildUi(){
                         batch.files.append(artboardId);
                         updateBatchLabel();
                         populateRail();
-                        if (railWidget->count() > 0) railWidget->setCurrentRow(railWidget->count() - 1);
-                        status->setText("New artboard added to rail");
+                        status->setText("New artboard appended");
                     } else {
-                        // Layers mode: Add a new layer to the active artboard
+                        // Layers mode: Add a new composition track layer
                         TimelineTrack track;
                         track.type = TimelineTrack::Image;
                         track.name = QString("Layer %1").arg(timelineTracks.size() + 1);
@@ -917,22 +916,21 @@ void MainWindow::buildUi(){
                     }
                 });
 
-                // 2. Delete Button (Trash)
-                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail, populateLayers]() {
+                // 2. Delete Button (Trash) - Falls back safely if nothing is selected
+                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail]() {
                     if (stackWidget->currentIndex() == 1) {
                         auto *selected = detailRowList->currentItem();
-                        if (selected && selected->data(Qt::UserRole).toString() == "track") {
-                            int idx = selected->data(Qt::UserRole + 2).toInt();
-                            if (idx >= 0 && idx < timelineTracks.size()) {
-                                timelineTracks.removeAt(idx);
-                                updateTrackPanel();
-                                refresh();
-                                populateLayers(currentFile);
-                                status->setText("Layer deleted");
-                            }
+                        int idx = selected ? selected->data(Qt::UserRole + 2).toInt() : (timelineTracks.size() - 1);
+                        if (idx >= 0 && idx < timelineTracks.size()) {
+                            timelineTracks.removeAt(idx);
+                            updateTrackPanel();
+                            refresh();
+                            if (!currentFile.isEmpty()) populateLayers(currentFile);
+                            status->setText("Layer deleted");
                         }
                     } else {
                         auto *selected = railWidget->currentItem();
+                        if (!selected && railWidget->count() > 0) selected = railWidget->item(railWidget->count() - 1);
                         if (selected) {
                             QString path = selected->data(Qt::UserRole).toString();
                             if (!path.isEmpty()) {
@@ -956,14 +954,14 @@ void MainWindow::buildUi(){
                             targetFile = selected->data(Qt::UserRole + 1).toString();
                         }
                     }
-                    if (targetFile.isEmpty()) targetFile = currentFile;
                     if (targetFile.isEmpty() && !batch.files.isEmpty()) targetFile = batch.files.first();
+                    if (targetFile.isEmpty()) targetFile = currentFile;
                     if (targetFile.isEmpty()) return;
 
                     auto &layer = canvasLayers[targetFile];
                     QSize sz = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
                     layer.mask = QImage(sz, QImage::Format_Grayscale8);
-                    layer.mask.fill(255); // Reveal all
+                    layer.mask.fill(255);
                     preview->setLayerMask(layer.mask);
                     if (stackWidget->currentIndex() == 1) populateLayers(targetFile);
                     status->setText("Editable layer mask created");

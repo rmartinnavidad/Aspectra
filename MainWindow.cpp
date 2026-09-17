@@ -788,7 +788,8 @@ void MainWindow::buildUi(){
                         board.size = size;
                         board.active = path == currentFile;
                         board.visible = layer.visible;
-                        if (path == currentFile) board.image = original;
+                        board.image = layer.artboardImage;
+                        if (board.image.isNull() && path == currentFile) board.image = original;
                         else if (!path.startsWith(QLatin1String("aspectra://"))) {
                             QImageReader reader(path);
                             const QSize sourceSize = reader.size();
@@ -1784,7 +1785,7 @@ void MainWindow::loadFiles(const QStringList &paths){
 }
 void MainWindow::selectFile(const QString &path){
       if(batchStrip){batchStrip->show();if(auto *dock=batchStrip->parentWidget())dock->setFixedHeight(164);}if(exportButton)exportButton->setEnabled(true);
-      if(loading)return;stopPlayback();player->setSource({});currentFile=path;const bool isArtboard=path.startsWith(QLatin1String("aspectra://"));if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=isArtboard?QString("Artboard %1").arg(batch.files.indexOf(path)+1):QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();if(isArtboard)layer.nativeSize=QSize(widthInput->value(),heightInput->value());canvasLayers[path]=layer;}restoreLayerOverride();bool video=!isArtboard&&VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
+      if(loading)return;if(path!=currentFile)preview->setMaskEditMode(false);stopPlayback();player->setSource({});currentFile=path;const bool isArtboard=path.startsWith(QLatin1String("aspectra://"));if(!canvasLayers.contains(path)){CanvasLayer layer;layer.source=path;layer.name=isArtboard?QString("Artboard %1").arg(batch.files.indexOf(path)+1):QFileInfo(inputTitles.value(path,inputAliases.value(path,path))).completeBaseName();if(isArtboard)layer.nativeSize=QSize(widthInput->value(),heightInput->value());canvasLayers[path]=layer;}restoreLayerOverride();bool video=!isArtboard&&VideoProcessor::isVideo(path);modes->button(video?1:0)->setChecked(true);captureRow->hide();videoRow->setVisible(video);inMarker->setEnabled(video);outMarker->setEnabled(video);
     QString name=isArtboard?canvasLayers.value(path).name:inputTitles.value(path,QFileInfo(inputAliases.value(path,path)).fileName());filename->setText(fontMetrics().elidedText(name,Qt::ElideMiddle,qMax(160,width()-190)));filename->setToolTip(isArtboard?name:inputAliases.value(path,path));{QSignalBlocker block(navigation);navigation->setCurrentIndex(batch.files.indexOf(path));}if(batchNavigator){QSignalBlocker block(batchNavigator);batchNavigator->setValue(batch.files.indexOf(path));}preview->setActiveArtboard(path);navLabel->setText(QString("%1 / %2").arg(batch.files.indexOf(path)+1).arg(batch.files.size()));
     if(isArtboard){
         // Artboards are synthetic canvases with no file on disk (identified by
@@ -1793,7 +1794,7 @@ void MainWindow::selectFile(const QString &path){
         // leave the previous artboard's image on screen. Build a blank
         // transparent frame from the stored layer size instead.
         loading=false;const auto &layer=canvasLayers[path];QSize size=layer.nativeSize.isValid()?layer.nativeSize:QSize(widthInput->value(),heightInput->value());
-        original=QImage(size,QImage::Format_ARGB32);original.fill(Qt::transparent);texturePreviewSource={};media.size=size;preview->setLayerMask(layer.mask);preview->clearVectorTraceFrame();preview->clearTextureFrame();
+        original=layer.artboardImage.isNull()?QImage(size,QImage::Format_ARGB32):layer.artboardImage;if(layer.artboardImage.isNull())original.fill(Qt::transparent);texturePreviewSource={};media.size=size;preview->setLayerMask(layer.mask);preview->clearVectorTraceFrame();preview->clearTextureFrame();
         refresh();status->setText(QString("Artboard \"%1\" ready").arg(layer.name));
         return;
     }

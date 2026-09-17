@@ -765,7 +765,7 @@ void MainWindow::buildUi(){
                 auto showArtboardWorkspace = [this]() {
                     QVector<PreviewArtboard> artboards;
                     qreal nextX = 0;
-                    for (const QString &path : batch.files) {
+                    for (const QString &path : this->batch.files) {
                         const CanvasLayer layer = canvasLayers.value(path);
                         const QSize size = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
                         PreviewArtboard board;
@@ -792,13 +792,13 @@ void MainWindow::buildUi(){
                 *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls]() {
                     railWidget->clear();
                     
-                    if (batch.files.isEmpty()) {
+                    if (this->batch.files.isEmpty()) {
                         auto *item = new QListWidgetItem("📁 Blank Canvas");
                         item->setData(Qt::UserRole, QString());
                         railWidget->addItem(item);
                     } else {
                         // Strictly iterates batch.files so creation order matches the left-to-right visual order perfectly
-                        for (const QString &path : batch.files) {
+                        for (const QString &path : this->batch.files) {
                             const auto &layer = canvasLayers[path];
                             QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
                             if (displayName.isEmpty()) displayName = "Artboard";
@@ -899,7 +899,7 @@ void MainWindow::buildUi(){
                     if (!path.isEmpty() && path != currentFile) selectFile(path);
                 });
                 QObject::connect(preview, &PreviewWidget::artboardSelected, railWidget, [this, railWidget](const QString &path) {
-                    if (!batch.files.contains(path)) return;
+                    if (!this->batch.files.contains(path)) return;
                     selectFile(path);
                     for (int i = 0; i < railWidget->count(); ++i)
                         if (railWidget->item(i)->data(Qt::UserRole).toString() == path) { railWidget->setCurrentRow(i); break; }
@@ -945,11 +945,11 @@ void MainWindow::buildUi(){
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
                         CanvasLayer layer;
                         layer.source = artboardId;
-                        layer.name = QString("Artboard %1").arg(batch.files.size() + 1);
+                        layer.name = QString("Artboard %1").arg(this->batch.files.size() + 1);
                         layer.nativeSize = QSize(widthInput->value(), heightInput->value());
                         canvasLayers[artboardId] = layer;
                         
-                        batch.files.append(artboardId);
+                        this->batch.files.append(artboardId);
                         updateBatchLabel();
                         
                         if (populateRailPtr) (*populateRailPtr)();
@@ -1001,17 +1001,17 @@ void MainWindow::buildUi(){
                         if (selected) {
                             QString path = selected->data(Qt::UserRole).toString();
                             if (!path.isEmpty()) {
-                                int removedIndex = batch.files.indexOf(path);
-                                batch.files.removeOne(path);
+                                int removedIndex = this->batch.files.indexOf(path);
+                                this->batch.files.removeOne(path);
                                 canvasLayers.remove(path);
                                 timelineTracks.erase(std::remove_if(timelineTracks.begin(), timelineTracks.end(), [&path](const TimelineTrack &track) { return track.artboardSource == path; }), timelineTracks.end());
                                 updateBatchLabel();
                                 updateTrackPanel();
                                 
                                 if (currentFile == path) {
-                                    if (!batch.files.isEmpty()) {
-                                        int nextIndex = qBound(0, removedIndex, int(batch.files.size()) - 1);
-                                        selectFile(batch.files[nextIndex]);
+                                    if (!this->batch.files.isEmpty()) {
+                                        int nextIndex = qBound(0, removedIndex, int(this->batch.files.size()) - 1);
+                                        selectFile(this->batch.files[nextIndex]);
                                     } else {
                                         clearMedia();
                                     }

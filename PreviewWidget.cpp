@@ -1,4 +1,5 @@
 #include <optional>
+#include <cmath>
 
 #include "PreviewWidget.h"
 
@@ -19,6 +20,106 @@ PreviewWidget::PreviewWidget(QWidget *parent):QWidget(parent) {
 }
 
 void PreviewWidget::setFrame(const QImage &image) { frame=image; refresh.start(); }
+void PreviewWidget::setArtboards(const QVector<PreviewArtboard> &items)
+{
+    workspaceArtboards = items;
+
+    for (const PreviewArtboard &artboard : workspaceArtboards) {
+        if (artboard.active) {
+            activeArtboardId = artboard.id;
+            break;
+        }
+    }
+
+    update();
+}
+
+void PreviewWidget::clearArtboards()
+{
+    workspaceArtboards.clear();
+    activeArtboardId.clear();
+    update();
+}
+
+void PreviewWidget::setActiveArtboard(const QString &id)
+{
+    activeArtboardId = id;
+
+    for (PreviewArtboard &artboard : workspaceArtboards)
+        artboard.active = (artboard.id == id);
+
+    update();
+}
+
+QRectF PreviewWidget::workspaceBounds() const
+{
+    QRectF bounds;
+    bool first = true;
+
+    for (const PreviewArtboard &artboard : workspaceArtboards) {
+        if (!artboard.visible || !artboard.size.isValid())
+            continue;
+
+        QRectF rect(
+            artboard.position,
+            QSizeF(artboard.size)
+        );
+
+        if (first) {
+            bounds = rect;
+            first = false;
+        } else {
+            bounds = bounds.united(rect);
+        }
+    }
+
+    return bounds;
+}
+
+QRectF PreviewWidget::artboardScreenRect(
+    const PreviewArtboard &artboard) const
+{
+    QRectF bounds = workspaceBounds();
+
+    if (!bounds.isValid())
+        return {};
+
+    const double availableWidth  = qMax(1, width()  - 80);
+    const double availableHeight = qMax(1, height() - 80);
+
+    double baseScale = qMin(
+        availableWidth / bounds.width(),
+        availableHeight / bounds.height()
+    );
+
+    if (!std::isfinite(baseScale) || baseScale <= 0.0)
+        baseScale = 1.0;
+
+    const double scale = baseScale * viewZoom;
+
+    const QPointF center(
+        width() * 0.5,
+        height() * 0.5
+    );
+
+    const QPointF boundsCenter = bounds.center();
+
+    QPointF topLeft =
+        center +
+        viewPan +
+        QPointF(
+            (artboard.position.x() - boundsCenter.x()) * scale,
+            (artboard.position.y() - boundsCenter.y()) * scale
+        );
+
+    return QRectF(
+        topLeft,
+        QSizeF(
+            artboard.size.width() * scale,
+            artboard.size.height() * scale
+        )
+    );
+}
 void PreviewWidget::setTextureFrame(const QImage &image) { textureFrame=image; textureActive=!image.isNull(); refresh.start(); }
 void PreviewWidget::clearTextureFrame() { textureActive=false; textureFrame={}; refresh.start(); }
 void PreviewWidget::setVectorTraceFrame(const QImage &image) { vectorTraceFrame=image; vectorTraceActive=!image.isNull(); refresh.start(); }

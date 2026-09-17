@@ -502,7 +502,8 @@ void MainWindow::buildUi(){
             const CanvasLayer layer=canvasLayers.value(sourcePath);
             QJsonObject item{{"source",sourcePath},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible},{"opacity",layer.opacity},{"fill",layer.fill},{"blendMode",layer.blendMode},{"lockPosition",layer.lockPosition}};
             if(!layer.mask.isNull())item["maskPngBase64"]=imageAsBase64(layer.mask);
-            if(!layer.artboardImage.isNull())item["imagePngBase64"]=imageAsBase64(layer.artboardImage);
+            const QImage artboardPixels=sourcePath==currentFile&&sourcePath.startsWith(QLatin1String("aspectra://"))?original:layer.artboardImage;
+            if(!artboardPixels.isNull())item["imagePngBase64"]=imageAsBase64(artboardPixels);
             layers.append(item);
         }
         root["layers"]=layers;
@@ -823,8 +824,7 @@ void MainWindow::buildUi(){
                         board.size = size;
                         board.active = path == currentFile;
                         board.visible = layer.visible;
-                        board.image = layer.artboardImage;
-                        if (board.image.isNull() && path == currentFile) board.image = original;
+                        board.image = path == currentFile ? original : layer.artboardImage;
                         else if (!path.startsWith(QLatin1String("aspectra://"))) {
                             QImageReader reader(path);
                             const QSize sourceSize = reader.size();
@@ -851,8 +851,7 @@ void MainWindow::buildUi(){
                             const auto &layer = canvasLayers[path];
                             QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
                             if (displayName.isEmpty()) displayName = "Artboard";
-                            QImage image = layer.artboardImage;
-                            if (image.isNull() && path == currentFile) image = original;
+                            QImage image = path == currentFile ? original : layer.artboardImage;
                             if (image.isNull() && !path.startsWith(QLatin1String("aspectra://"))) {
                                 QImageReader reader(path);
                                 reader.setScaledSize(QSize(64, 64));
@@ -1018,8 +1017,7 @@ void MainWindow::buildUi(){
                 };
                 auto renderArtboard = [this](const QString &path) {
                     const CanvasLayer layer = canvasLayers.value(path);
-                    QImage image = layer.artboardImage;
-                    if (image.isNull() && path == currentFile) image = original;
+                    QImage image = path == currentFile ? original : layer.artboardImage;
                     if (image.isNull() && !path.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(path);image = reader.read(); }
                     if (image.isNull()) { image = QImage(layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value()), QImage::Format_ARGB32);image.fill(Qt::transparent); }
                     QVector<TimelineTrack> owned;
@@ -1710,7 +1708,8 @@ void MainWindow::autosaveProject(){
         const CanvasLayer layer=canvasLayers.value(source);
         QJsonObject item{{"source",source},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible},{"opacity",layer.opacity},{"fill",layer.fill},{"blendMode",layer.blendMode},{"lockPosition",layer.lockPosition}};
         if(!layer.mask.isNull())item["maskPngBase64"]=imageAsBase64(layer.mask);
-        if(!layer.artboardImage.isNull())item["imagePngBase64"]=imageAsBase64(layer.artboardImage);
+        const QImage artboardPixels=source==currentFile&&source.startsWith(QLatin1String("aspectra://"))?original:layer.artboardImage;
+        if(!artboardPixels.isNull())item["imagePngBase64"]=imageAsBase64(artboardPixels);
         layers.append(item);
     }
     document["layers"]=layers;

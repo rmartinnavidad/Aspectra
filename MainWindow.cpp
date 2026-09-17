@@ -1673,11 +1673,50 @@ void MainWindow::createNewProject(int width,int height,int resolution,bool artbo
     batch.files.clear();canvasLayers.clear();inputAliases.clear();inputTitles.clear();timelineTracks.clear();currentFile="aspectra://untitled";batch.files.append(currentFile);original=QImage(qMax(1,width),qMax(1,height),QImage::Format_ARGB32);original.fill(background.alpha()==0?Qt::transparent:background);media={};media.size=original.size();setDimensions(width,height);CanvasLayer layer;layer.source=currentFile;layer.name=artboard?"Artboard 1":"Canvas";layer.nativeSize=original.size();canvasLayers[currentFile]=layer;preview->clearVectorTraceFrame();preview->clearTextureFrame();preview->setLayerMask({});preview->setFrame(original);refresh();updateBatchLabel();if(exportButton)exportButton->setEnabled(true);QSettings settings;settings.setValue("newProjectResolution",resolution);settings.setValue("newProjectColorMode",colorMode);settings.setValue("newProjectProfile",profile);status->setText(QString("New %1 · %2 × %3 · %4 dpi · %5").arg(artboard?"artboard":"transparent canvas").arg(width).arg(height).arg(resolution).arg(colorMode));autosaveProject();
 }
 void MainWindow::autosaveProject(){
-    if(!widthInput||!heightInput)return;QJsonObject document;document["version"]=2;document["recovery"]=true;document["savedAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODate);document["canvas"]=QJsonObject{{"width",widthInput->value()},{"height",heightInput->value()},{"ratio",ratio?ratio->currentText():"Custom"}};QJsonArray layers;for(const auto &source:batch.files){const auto layer=canvasLayers.value(source);layers.append(QJsonObject{{"source",source},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible}});}document["layers"]=layers;QSaveFile out(recoveryFilePath());if(!out.open(QIODevice::WriteOnly))return;out.write(QJsonDocument(document).toJson(QJsonDocument::Compact));out.commit();
+    if(!widthInput||!heightInput)return;
+    QJsonObject document;document["version"]=2;document["recovery"]=true;
+    document["savedAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    document["canvas"]=QJsonObject{{"width",widthInput->value()},{"height",heightInput->value()},{"ratio",ratio?ratio->currentText():"Custom"}};
+    QJsonArray layers;
+    for(const QString &source:batch.files){
+        const CanvasLayer layer=canvasLayers.value(source);
+        QJsonObject item{{"source",source},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible},{"opacity",layer.opacity},{"fill",layer.fill},{"blendMode",layer.blendMode},{"lockPosition",layer.lockPosition}};
+        if(!layer.mask.isNull())item["maskPngBase64"]=imageAsBase64(layer.mask);
+        if(!layer.artboardImage.isNull())item["imagePngBase64"]=imageAsBase64(layer.artboardImage);
+        layers.append(item);
+    }
+    document["layers"]=layers;
+    QSaveFile out(recoveryFilePath());if(!out.open(QIODevice::WriteOnly))return;
+    out.write(QJsonDocument(document).toJson(QJsonDocument::Compact));out.commit();
 }
 void MainWindow::openProjectFile(const QString &path){
     if(galleryScreen)galleryScreen->hide();
-    QFile in(path);if(!in.open(QIODevice::ReadOnly)){showError("Could not open project.");return;}const QJsonDocument document=QJsonDocument::fromJson(in.readAll());if(!document.isObject()){showError("This is not a valid Aspectra project.");return;}const QJsonObject root=document.object(),canvas=root.value("canvas").toObject();const int width=canvas.value("width").toInt(1024),height=canvas.value("height").toInt(1024);QStringList sources;canvasLayers.clear();for(const auto &value:root.value("layers").toArray()){const QJsonObject item=value.toObject();const QString source=item.value("source").toString();if(source.isEmpty())continue;if(!source.startsWith(QLatin1String("aspectra://"))&&!QFileInfo::exists(source))continue;sources<<source;CanvasLayer layer;layer.source=source;layer.name=item.value("name").toString(QFileInfo(source).completeBaseName());layer.position={item.value("x").toDouble(),item.value("y").toDouble()};layer.nativeSize={item.value("width").toInt(),item.value("height").toInt()};layer.visible=item.value("visible").toBool(true);canvasLayers[source]=layer;}setDimensions(width,height);if(sources.isEmpty()){createNewProject(width,height,QSettings().value("newProjectResolution",300).toInt(),true,QSettings().value("newProjectColorMode","RGB").toString(),QSettings().value("newProjectProfile","sRGB IEC61966-2.1").toString(),Qt::transparent);status->setText("Recovered blank canvas");}else{batch.files=sources;updateBatchLabel();selectFile(batch.files.first());status->setText(QString("Project opened · %1 linked artboards").arg(batch.files.size()));}if(!path.endsWith("Aspectra-X-recovery.aspectra"))rememberRecentDocument(path);
+    QFile in(path);if(!in.open(QIODevice::ReadOnly)){showError("Could not open project.");return;}
+    const QJsonDocument document=QJsonDocument::fromJson(in.readAll());
+    if(!document.isObject()){showError("This is not a valid Aspectra project.");return;}
+    const QJsonObject root=document.object(),canvas=root.value("canvas").toObject();
+    const int width=canvas.value("width").toInt(1024),height=canvas.value("height").toInt(1024);
+    QStringList sources;canvasLayers.clear();
+    for(const auto &value:root.value("layers").toArray()){
+        const QJsonObject item=value.toObject();const QString source=item.value("source").toString();
+        if(source.isEmpty()||(!source.startsWith(QLatin1String("aspectra://"))&&!QFileInfo::exists(source)))continue;
+        CanvasLayer layer;layer.source=source;layer.name=item.value("name").toString(QFileInfo(source).completeBaseName());
+        layer.position={item.value("x").toDouble(),item.value("y").toDouble()};
+        layer.nativeSize={item.value("width").toInt(),item.value("height").toInt()};
+        layer.visible=item.value("visible").toBool(true);layer.opacity=item.value("opacity").toDouble(1);layer.fill=item.value("fill").toDouble(1);
+        layer.blendMode=item.value("blendMode").toString("Normal");layer.lockPosition=item.value("lockPosition").toBool(false);
+        layer.mask=imageFromBase64(item.value("maskPngBase64"));layer.artboardImage=imageFromBase64(item.value("imagePngBase64"));
+        sources<<source;canvasLayers[source]=layer;
+    }
+    setDimensions(width,height);
+    if(sources.isEmpty()){
+        createNewProject(width,height,QSettings().value("newProjectResolution",300).toInt(),true,QSettings().value("newProjectColorMode","RGB").toString(),QSettings().value("newProjectProfile","sRGB IEC61966-2.1").toString(),Qt::transparent);
+        status->setText("Recovered blank canvas");
+    }else{
+        batch.files=sources;updateBatchLabel();selectFile(batch.files.first());
+        status->setText(QString("Project opened · %1 linked artboards").arg(batch.files.size()));
+    }
+    if(!path.endsWith("Aspectra-X-recovery.aspectra"))rememberRecentDocument(path);
 }
 #if 0
 void MainWindow::showWelcomeScreen(){

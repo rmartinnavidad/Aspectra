@@ -567,7 +567,7 @@ void MainWindow::buildUi(){
             const QString name=subNames.value(tabs->currentIndex()).value(index,"Setting");
 
             // =================================================================
-            // CUSTOM DRILL-DOWN LAYER CARD OVERRIDE
+            // EXPLICIT LAYER CARD OVERRIDE
             // =================================================================
             if (name == "Layer") {
                 auto *layerTopLayout = new QVBoxLayout;
@@ -695,7 +695,7 @@ void MainWindow::buildUi(){
                 tabs->hide();
             }
             // =================================================================
-            // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS
+            // STANDARD SLIDER CARD FALLBACK
             // =================================================================
             else {
                 QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());

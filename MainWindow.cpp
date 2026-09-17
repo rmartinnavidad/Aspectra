@@ -991,8 +991,8 @@ void MainWindow::buildUi(){
                     for (const auto &track : timelineTracks) if (track.artboardSource == path) owned.append(track);
                     return ImageProcessor::compositeTimeline(image, owned, 0);
                 };
-                railWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-                QObject::connect(railWidget, &QWidget::customContextMenuRequested, railWidget,
+                railWidget->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
+                QObject::connect(railWidget->viewport(), &QWidget::customContextMenuRequested, railWidget,
                     [this, railWidget, detailRowList, populateRailPtr, populateLayersPtr, createArtboardAfter, deleteArtboard, renderArtboard](const QPoint &position) {
                     auto *item = railWidget->itemAt(position);
                     const QString contextArtboardId = item ? item->data(Qt::UserRole).toString() : QString();
@@ -1076,8 +1076,8 @@ void MainWindow::buildUi(){
                         }
                     }
                 });
-                detailRowList->setContextMenuPolicy(Qt::CustomContextMenu);
-                QObject::connect(detailRowList, &QWidget::customContextMenuRequested, detailRowList,
+                detailRowList->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
+                QObject::connect(detailRowList->viewport(), &QWidget::customContextMenuRequested, detailRowList,
                     [this, detailRowList, populateLayersPtr](const QPoint &position) {
                     auto *item = detailRowList->itemAt(position);
                     if (!item) return;
@@ -1257,6 +1257,7 @@ void MainWindow::buildUi(){
             // =================================================================
             // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS
             // =================================================================
+            preview->setMaskEditMode(false);
             preview->clearArtboards();
             clearLayoutItems(settingCardLayout);
             QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());

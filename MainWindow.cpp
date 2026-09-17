@@ -702,6 +702,7 @@ void MainWindow::buildUi(){
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
                 railWidget->setFixedHeight(96);
+                railWidget->setSpacing(8);
                 railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
                 railWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 railWidget->setDragEnabled(true);
@@ -724,13 +725,15 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(detailRowList);
 
+                auto activeArtboard = std::make_shared<QString>();
                 std::function<void()> populateRail;
                 std::function<void(const QString&)> populateLayers;
 
-                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
+                populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, activeArtboard]() {
+                    const QString selectedPath = railWidget->currentItem() ? railWidget->currentItem()->data(Qt::UserRole).toString() : currentFile;
                     railWidget->clear();
                     QStringList paths = this->batch.files;
-                    if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.append(currentFile);
+                    if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.prepend(currentFile);
                     for (auto it = canvasLayers.cbegin(); it != canvasLayers.cend(); ++it)
                         if (!paths.contains(it.key())) paths.append(it.key());
 
@@ -744,16 +747,27 @@ void MainWindow::buildUi(){
                             QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
                             auto *item = new QListWidgetItem("📁 " + displayName);
                             item->setData(Qt::UserRole, path);
+                            item->setSizeHint(QSize(240, 64));
                             railWidget->addItem(item);
                         }
                     }
+                    for (int row = 0; row < railWidget->count(); ++row) {
+                        if (railWidget->item(row)->data(Qt::UserRole).toString() == selectedPath) {
+                            railWidget->setCurrentRow(row);
+                            break;
+                        }
+                    }
+                    activeArtboard->clear();
                     stackWidget->setCurrentIndex(0);
                     backBtn->hide();
                     crumbLabel->setText("Artboards");
                     blendCombo->setCurrentText("Pass Through");
                 };
 
-                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
+                populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, activeArtboard](const QString &sourcePath) {
+                    if (sourcePath.isEmpty()) return;
+                    *activeArtboard = sourcePath;
+                    if (sourcePath != currentFile) selectFile(sourcePath);
                     detailRowList->clear();
 
                     auto createLayerRow = [this](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
@@ -827,9 +841,10 @@ void MainWindow::buildUi(){
                     baseItem->setData(Qt::UserRole, "base");
                     baseItem->setData(Qt::UserRole + 1, sourcePath);
 
-                    if (sourcePath == currentFile) {
+                    {
                         for (int i = 0; i < timelineTracks.size(); ++i) {
                             const auto &track = timelineTracks[i];
+                            if (!track.artboardSource.isEmpty() && track.artboardSource != sourcePath) continue;
                             QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
                             auto *item = new QListWidgetItem(detailRowList);
                             item->setSizeHint(QSize(0, 40));
@@ -1388,7 +1403,7 @@ void MainWindow::loadProject(){
 }
 void MainWindow::createNewProject(int width,int height,int resolution,bool artboard,const QString &colorMode,const QString &profile,const QColor &background){
     if(galleryScreen)galleryScreen->hide();
-    batch.files.clear();canvasLayers.clear();inputAliases.clear();inputTitles.clear();timelineTracks.clear();currentFile="aspectra://untitled";original=QImage(qMax(1,width),qMax(1,height),QImage::Format_ARGB32);original.fill(background.alpha()==0?Qt::transparent:background);media={};media.size=original.size();setDimensions(width,height);CanvasLayer layer;layer.source=currentFile;layer.name=artboard?"Artboard 1":"Canvas";layer.nativeSize=original.size();canvasLayers[currentFile]=layer;preview->clearVectorTraceFrame();preview->clearTextureFrame();preview->setLayerMask({});preview->setFrame(original);refresh();updateBatchLabel();if(exportButton)exportButton->setEnabled(true);QSettings settings;settings.setValue("newProjectResolution",resolution);settings.setValue("newProjectColorMode",colorMode);settings.setValue("newProjectProfile",profile);status->setText(QString("New %1 · %2 × %3 · %4 dpi · %5").arg(artboard?"artboard":"transparent canvas").arg(width).arg(height).arg(resolution).arg(colorMode));autosaveProject();
+    batch.files.clear();canvasLayers.clear();inputAliases.clear();inputTitles.clear();timelineTracks.clear();currentFile="aspectra://untitled";batch.files.append(currentFile);original=QImage(qMax(1,width),qMax(1,height),QImage::Format_ARGB32);original.fill(background.alpha()==0?Qt::transparent:background);media={};media.size=original.size();setDimensions(width,height);CanvasLayer layer;layer.source=currentFile;layer.name=artboard?"Artboard 1":"Canvas";layer.nativeSize=original.size();canvasLayers[currentFile]=layer;preview->clearVectorTraceFrame();preview->clearTextureFrame();preview->setLayerMask({});preview->setFrame(original);refresh();updateBatchLabel();if(exportButton)exportButton->setEnabled(true);QSettings settings;settings.setValue("newProjectResolution",resolution);settings.setValue("newProjectColorMode",colorMode);settings.setValue("newProjectProfile",profile);status->setText(QString("New %1 · %2 × %3 · %4 dpi · %5").arg(artboard?"artboard":"transparent canvas").arg(width).arg(height).arg(resolution).arg(colorMode));autosaveProject();
 }
 void MainWindow::autosaveProject(){
     if(!widthInput||!heightInput)return;QJsonObject document;document["version"]=2;document["recovery"]=true;document["savedAt"]=QDateTime::currentDateTimeUtc().toString(Qt::ISODate);document["canvas"]=QJsonObject{{"width",widthInput->value()},{"height",heightInput->value()},{"ratio",ratio?ratio->currentText():"Custom"}};QJsonArray layers;for(const auto &source:batch.files){const auto layer=canvasLayers.value(source);layers.append(QJsonObject{{"source",source},{"name",layer.name},{"x",layer.position.x()},{"y",layer.position.y()},{"width",layer.nativeSize.width()},{"height",layer.nativeSize.height()},{"visible",layer.visible}});}document["layers"]=layers;QSaveFile out(recoveryFilePath());if(!out.open(QIODevice::WriteOnly))return;out.write(QJsonDocument(document).toJson(QJsonDocument::Compact));out.commit();

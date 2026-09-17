@@ -43,7 +43,7 @@ struct TimelineKeyframe {
 struct TimelineTrack {
     enum Type { Video, Audio, Image, Text, Effect };
     Type type=Text;
-    QString name,text,source,blendMode{"Normal"},transition{"Fade"},groupId;
+    QString name,text,source,blendMode{"Normal"},transition{"Fade"},groupId,artboardSource;
     QImage image;
     QColor color{Qt::white};
     QPointF position{24,56},scale{1,1};

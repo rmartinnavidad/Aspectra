@@ -610,57 +610,61 @@ void MainWindow::buildUi(){
             // =================================================================
            if (name == "Layer") {
                 clearLayoutItems(settingCardLayout);
-                settingCardLayout->setContentsMargins(8, 4, 8, 6);
-                settingCardLayout->setSpacing(6);
+                settingCardLayout->setContentsMargins(6, 4, 6, 4);
+                settingCardLayout->setSpacing(3);
 
                 // =============================================================
-                // 1. TOP SECTION: FLUID HEADER (Matches app style)
+                // 1. TOP SECTION: SLIM HEADER (Locks, Blend Mode, Slim Sliders)
                 // =============================================================
                 auto *topContainer = new QWidget;
                 auto *topLayout = new QVBoxLayout(topContainer);
                 topLayout->setContentsMargins(0, 0, 0, 0);
-                topLayout->setSpacing(4);
+                topLayout->setSpacing(2);
 
                 auto *row1 = new QHBoxLayout;
-                row1->setSpacing(6);
+                row1->setSpacing(4);
 
                 auto *lockPixels = new QToolButton; lockPixels->setIcon(settingIcon("brush"));
                 auto *lockPos = new QToolButton; lockPos->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/move tool.png"));
                 auto *lockAll = new QToolButton; lockAll->setIcon(settingIcon("safe"));
                 for (auto *b : {lockPixels, lockPos, lockAll}) {
                     b->setCheckable(true);
-                    b->setFixedSize(26, 26);
-                    b->setIconSize(QSize(14, 14));
-                    b->setStyleSheet("QToolButton { background: #000000; border: 1px solid #2d2d35; border-radius: 6px; }"
-                                     "QToolButton:checked { background: #101015; border: 2px solid #7a4dff; }");
+                    b->setFixedSize(22, 22);
+                    b->setIconSize(QSize(12, 12));
+                    b->setStyleSheet("QToolButton { background: #14161d; border: 1px solid #282c37; border-radius: 4px; }"
+                                     "QToolButton:checked { background: #2a2040; border-color: #7a4dff; }");
                     row1->addWidget(b);
                 }
                 row1->addStretch();
 
                 auto *blendCombo = new QComboBox;
                 blendCombo->addItems({"Pass Through", "Normal", "Multiply", "Screen", "Overlay", "Color Dodge"});
-                blendCombo->setFixedHeight(26);
-                blendCombo->setStyleSheet("QComboBox { background: #000000; border: 1px solid #2d2d35; border-radius: 8px; color: #ffffff; padding-left: 8px; font-size: 11px; }");
+                blendCombo->setFixedHeight(22);
+                blendCombo->setStyleSheet("QComboBox { background: #11141c; border: 1px solid #282c37; border-radius: 4px; font-size: 11px; padding-left: 6px; }");
                 row1->addWidget(blendCombo);
                 topLayout->addLayout(row1);
 
-                // Using the software's native GradientSlider for Opacity and Fill
-                auto createGradientSliderRow = [](const QString &title, int defaultVal) {
+                auto createSlimSliderRow = [](const QString &title, int defaultVal) {
                     auto *sliderRow = new QHBoxLayout;
-                    sliderRow->setSpacing(8);
+                    sliderRow->setSpacing(6);
                     auto *lbl = new QLabel(title);
-                    lbl->setFixedWidth(52);
-                    lbl->setStyleSheet("color: #ffffff; font-size: 10px; font-weight: 700;");
+                    lbl->setFixedWidth(46);
+                    lbl->setStyleSheet("color: #a0a6b5; font-size: 10px; font-weight: 600;");
 
-                    auto *slider = new GradientSlider(Qt::Horizontal);
+                    auto *slider = new QSlider(Qt::Horizontal);
                     slider->setRange(0, 100);
                     slider->setValue(defaultVal);
-                    slider->setFixedHeight(22);
+                    slider->setFixedHeight(16);
+                    slider->setStyleSheet(
+                        "QSlider::groove:horizontal { height: 3px; background: #1c202c; border-radius: 1px; }"
+                        "QSlider::sub-page:horizontal { background: #7a4dff; border-radius: 1px; }"
+                        "QSlider::handle:horizontal { width: 10px; height: 10px; margin: -4px 0; border-radius: 5px; background: #ffffff; }"
+                    );
 
                     auto *valLbl = new QLabel(QString::number(defaultVal) + "%");
-                    valLbl->setFixedWidth(34);
+                    valLbl->setFixedWidth(32);
                     valLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-                    valLbl->setStyleSheet("min-width:26px; min-height:26px; max-width:42px; max-height:42px; background:#ffffff; color:#000000; border-radius:13px; font-weight:700; font-variant-numeric:tabular-nums; padding:1px 3px; font-size:10px;");
+                    valLbl->setStyleSheet("color: #ffffff; font-size: 10px; font-weight: bold;");
 
                     QObject::connect(slider, &QSlider::valueChanged, [valLbl](int val) {
                         valLbl->setText(QString::number(val) + "%");
@@ -672,15 +676,15 @@ void MainWindow::buildUi(){
                     return sliderRow;
                 };
 
-                topLayout->addLayout(createGradientSliderRow("Opacity", 100));
-                topLayout->addLayout(createGradientSliderRow("Fill", 100));
+                topLayout->addLayout(createSlimSliderRow("Opacity", 100));
+                topLayout->addLayout(createSlimSliderRow("Fill", 100));
                 settingCardLayout->addWidget(topContainer);
 
                 // =============================================================
-                // 2. MIDDLE SECTION: FLUID NAVIGATION & RAIL
+                // 2. MIDDLE SECTION: HORIZONTAL RAIL & DRILL-DOWN LIST
                 // =============================================================
                 auto *navRow = new QHBoxLayout;
-                navRow->setSpacing(6);
+                navRow->setSpacing(4);
                 auto *backBtn = new QToolButton;
                 backBtn->setText("‹ Back");
                 backBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
@@ -689,7 +693,7 @@ void MainWindow::buildUi(){
                 backBtn->hide();
 
                 auto *crumbLabel = new QLabel("Artboards");
-                crumbLabel->setStyleSheet("color: #ffffff; font-size: 10px; font-weight: 700; letter-spacing: 1px;");
+                crumbLabel->setStyleSheet("color: #b9d1ff; font-size: 10px; font-weight: 700; letter-spacing: 1px;");
 
                 navRow->addWidget(backBtn);
                 navRow->addWidget(crumbLabel, 1);
@@ -698,28 +702,30 @@ void MainWindow::buildUi(){
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail matching the app's dark minimal aesthetic
+                // Page 0: Horizontal Artboard Rail sized to fit 2 cards comfortably side-by-side
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
-                railWidget->setFixedHeight(96);
+                railWidget->setFixedHeight(82);
+                railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+                railWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 railWidget->setDragEnabled(true);
                 railWidget->setAcceptDrops(true);
                 railWidget->setDropIndicatorShown(true);
                 railWidget->setDragDropMode(QAbstractItemView::InternalMove);
                 railWidget->setStyleSheet(
-                    "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
-                    "QListWidget::item { width: 240px; height: 64px; background: #000000; border: 1px solid #2d2d35; border-radius: 8px; margin-right: 8px; color: #ffffff; font-size: 10px; font-weight: 600; padding: 4px; }"
-                    "QListWidget::item:selected { border: 2px solid #7a4dff; background: #101015; }"
+                    "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 4px; }"
+                    "QListWidget::item { width: 140px; height: 66px; background: #12151c; border: 1px solid #242936; border-radius: 6px; margin-right: 8px; color: #e0e4ee; font-size: 10px; font-weight: 600; padding: 6px; }"
+                    "QListWidget::item:selected { border: 2px solid #3ddcff; background: #161b26; color: #ffffff; }"
                 );
                 stackWidget->addWidget(railWidget);
 
-                // Page 1: Layer Rows matching software list items
+                // Page 1: Layer Rows
                 auto *detailRowList = new QListWidget;
                 detailRowList->setStyleSheet(
-                    "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
-                    "QListWidget::item { height: 38px; border-bottom: 1px solid #1c1c24; color: #ffffff; font-size: 11px; padding: 2px 6px; }"
-                    "QListWidget::item:selected { background: #101015; border: 1px solid #3ddcff; border-radius: 6px; }"
+                    "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 2px; }"
+                    "QListWidget::item { height: 36px; border-bottom: 1px solid #12151d; color: #e0e4ee; font-size: 11px; padding: 2px 4px; }"
+                    "QListWidget::item:selected { background: #161b26; border: 1px solid #3ddcff; border-radius: 4px; color: #ffffff; }"
                 );
                 stackWidget->addWidget(detailRowList);
 
@@ -729,7 +735,7 @@ void MainWindow::buildUi(){
                 populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
                     railWidget->clear();
                     QStringList paths = this->batch.files;
-                    if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.append(currentFile);
+                    if (!currentFile.isEmpty()&&!paths.contains(currentFile)) paths.append(currentFile);
                     for (auto it = canvasLayers.cbegin(); it != canvasLayers.cend(); ++it)
                         if (!paths.contains(it.key())) paths.append(it.key());
 
@@ -755,19 +761,19 @@ void MainWindow::buildUi(){
                 populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
                     detailRowList->clear();
 
-                    auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
+                    auto createLayerRow = [this](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
                         auto *rowItemWidget = new QWidget;
                         auto *rowLayout = new QHBoxLayout(rowItemWidget);
                         rowLayout->setContentsMargins(4, 2, 4, 2);
-                        rowLayout->setSpacing(8);
+                        rowLayout->setSpacing(6);
 
                         auto *eyeBtn = new QToolButton;
                         eyeBtn->setCheckable(true);
                         eyeBtn->setChecked(isVisible);
                         eyeBtn->setText(isVisible ? "👁" : "○");
-                        eyeBtn->setFixedSize(22, 22);
-                        eyeBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #3ddcff; font-size: 13px; }"
-                                              "QToolButton:checked { color: #3ddcff; } QToolButton:not(:checked) { color: #555562; }");
+                        eyeBtn->setFixedSize(20, 20);
+                        eyeBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #3ddcff; font-size: 12px; }"
+                                              "QToolButton:checked { color: #3ddcff; } QToolButton:not(:checked) { color: #697081; }");
                         
                         QObject::connect(eyeBtn, &QToolButton::toggled, [eyeBtn, onToggleVisibility](bool checked) {
                             eyeBtn->setText(checked ? "👁" : "○");
@@ -777,25 +783,25 @@ void MainWindow::buildUi(){
 
                         auto *thumbLbl = new QLabel;
                         thumbLbl->setFixedSize(24, 24);
-                        thumbLbl->setStyleSheet("background: #000000; border: 1px solid #33333b; border-radius: 4px;");
+                        thumbLbl->setStyleSheet("background: #14161d; border: 1px solid #282c37; border-radius: 3px;");
                         rowLayout->addWidget(thumbLbl);
 
                         if (hasMask) {
                             auto *maskLbl = new QLabel;
                             maskLbl->setFixedSize(24, 24);
-                            maskLbl->setStyleSheet("background: #ffffff; border: 1px solid #33333b; border-radius: 4px;");
+                            maskLbl->setStyleSheet("background: #e0e4ee; border: 1px solid #282c37; border-radius: 3px;");
                             rowLayout->addWidget(maskLbl);
                         }
 
                         auto *nameLbl = new QLabel(layerName);
-                        nameLbl->setStyleSheet("color: #ffffff; font-size: 11px; font-weight: 600; background: transparent;");
+                        nameLbl->setStyleSheet("color: #e0e4ee; font-size: 11px; font-weight: 600; background: transparent;");
                         rowLayout->addWidget(nameLbl);
 
                         rowLayout->addStretch(1);
 
                         if (hasFx) {
                             auto *fxLbl = new QLabel("fx");
-                            fxLbl->setStyleSheet("color: #f39c12; font-size: 9px; font-weight: bold; background: #000000; border: 1px solid #4a3b1c; border-radius: 4px; padding: 2px 5px;");
+                            fxLbl->setStyleSheet("color: #f39c12; font-size: 9px; font-weight: bold; background: #12151c; border: 1px solid #282c37; border-radius: 3px; padding: 1px 4px;");
                             rowLayout->addWidget(fxLbl);
                         }
 
@@ -811,7 +817,7 @@ void MainWindow::buildUi(){
                     };
 
                     auto *baseItem = new QListWidgetItem(detailRowList);
-                    baseItem->setSizeHint(QSize(0, 40));
+                    baseItem->setSizeHint(QSize(0, 36));
                     bool baseVisible = canvasLayers.contains(sourcePath) ? canvasLayers[sourcePath].visible : true;
                     bool hasMask = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].mask.isNull();
                     auto *baseWidget = createLayerRow(sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName(), baseVisible, hasMask, true, true, [this, sourcePath](bool visible) {
@@ -829,7 +835,7 @@ void MainWindow::buildUi(){
                             const auto &track = timelineTracks[i];
                             QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
                             auto *item = new QListWidgetItem(detailRowList);
-                            item->setSizeHint(QSize(0, 40));
+                            item->setSizeHint(QSize(0, 36));
                             auto *trackWidget = createLayerRow(tName, track.enabled, false, false, false, [this, i](bool visible) {
                                 if (i >= 0 && i < timelineTracks.size()) {
                                     timelineTracks[i].enabled = visible;
@@ -863,8 +869,8 @@ void MainWindow::buildUi(){
                 // 3. BOTTOM SECTION: COMPACT ACTION STRIP
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
-                actionRow->setSpacing(8);
-                actionRow->setContentsMargins(0, 4, 0, 0);
+                actionRow->setSpacing(6);
+                actionRow->setContentsMargins(0, 2, 0, 0);
                 actionRow->addStretch();
 
                 auto *maskBtn = new QToolButton; maskBtn->setIcon(settingIcon("mask")); maskBtn->setToolTip("Add Layer Mask");
@@ -874,17 +880,17 @@ void MainWindow::buildUi(){
                 auto *delBtn = new QToolButton; delBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/delete anchor point tool.png")); delBtn->setToolTip("Delete");
 
                 for (auto *btn : {maskBtn, adjBtn, grpBtn, newLayerBtn, delBtn}) {
-                    btn->setFixedSize(28, 28);
-                    btn->setIconSize(QSize(15, 15));
-                    btn->setStyleSheet("QToolButton { background: #000000; border: 1px solid #2d2d35; border-radius: 6px; }"
-                                       "QToolButton:hover { background: #111114; border-color: #3ddcff; }");
+                    btn->setFixedSize(24, 24);
+                    btn->setIconSize(QSize(14, 14));
+                    btn->setStyleSheet("QToolButton { background: #12151c; border: 1px solid #242936; border-radius: 4px; }"
+                                       "QToolButton:hover { background: #1d222e; border-color: #3ddcff; }");
                     actionRow->addWidget(btn);
                 }
                 settingCardLayout->addLayout(actionRow);
 
                 settingCard->show();
                 tabs->hide();
-                settingsHost->setMinimumHeight(qMin(340, settingsHost->layout()->sizeHint().height()));
+                settingsHost->setMinimumHeight(qMin(320, settingsHost->layout()->sizeHint().height()));
                 settingsHost->updateGeometry();
                 if (auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
                     outer->invalidate();

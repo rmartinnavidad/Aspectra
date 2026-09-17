@@ -697,7 +697,7 @@ void MainWindow::buildUi(){
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail (Restored to 240px width as requested)
+                // Page 0: Horizontal Artboard Rail (Strictly 240px width per artboard card)
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
@@ -883,15 +883,13 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionRow);
 
-                // Wire action strip buttons to respect whether user is on Artboards view (Page 0) or Layers view (Page 1)
+                // Context-Aware Action Handlers for Mode Switching (Artboards vs Layers)
                 QObject::connect(newLayerBtn, &QToolButton::clicked, [this, stackWidget, populateRail]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards mode: Create a new blank project/artboard
                         createNewProject(widthInput->value(), heightInput->value(), 300, true, "RGB", "sRGB IEC61966-2.1", Qt::transparent);
                         populateRail();
                         status->setText("New artboard created");
                     } else {
-                        // Layers mode: Add a new transparent layer/track
                         TimelineTrack track;
                         track.type = TimelineTrack::Image;
                         track.name = QString("Layer %1").arg(timelineTracks.size() + 1);
@@ -906,9 +904,8 @@ void MainWindow::buildUi(){
                     }
                 });
 
-                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail]() {
+                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, populateRail]() {
                     if (stackWidget->currentIndex() == 1) {
-                        // Layers mode: Delete selected layer track
                         auto *selected = detailRowList->currentItem();
                         if (selected && selected->data(Qt::UserRole).toString() == "track") {
                             int idx = selected->data(Qt::UserRole + 2).toInt();
@@ -921,7 +918,6 @@ void MainWindow::buildUi(){
                             }
                         }
                     } else {
-                        // Artboards mode: Clear current media/batch item
                         clearMedia();
                         populateRail();
                         status->setText("Artboard removed");

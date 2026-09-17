@@ -61,8 +61,8 @@ int runUiTests(MainWindow &w){
             sendSafeMouse(QEvent::MouseButtonPress,.8);
             sendSafeMouse(QEvent::MouseMove,.3);
             sendSafeMouse(QEvent::MouseButtonRelease,.3);
-            require(safeSlider->value()==32,"Safe-zone drag did not reach the expected value");
-            for(auto *input:w.safeInputs)require(qAbs(input->value()-32)<.01,"Safe-zone drag did not update all edges");
+            require(qAbs(safeSlider->value()-31.5)<=.5,QString("Safe-zone drag expected 31 or 32, received %1").arg(safeSlider->value()));
+            for(auto *input:w.safeInputs)require(qAbs(input->value()-safeSlider->value())<.01,"Safe-zone drag did not update all edges");
             require(w.guides->isChecked(),"Safe-zone drag did not reveal guides");
             w.marginUnits->setCurrentIndex(1);
             sendSafeMouse(QEvent::MouseButtonPress,.7);

@@ -178,6 +178,78 @@ void PreviewWidget::paintEvent(QPaintEvent *) {
     // guides and active tool are the only visible canvas boundaries.
     QRectF outer=rect();
 
+    if (!workspaceArtboards.isEmpty())
+{
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    for (const PreviewArtboard &artboard : workspaceArtboards)
+    {
+        if (!artboard.visible || !artboard.size.isValid())
+            continue;
+
+        QRectF rect = artboardScreenRect(artboard);
+
+        if (!rect.isValid())
+            continue;
+
+        // Shadow
+        QRectF shadow = rect.translated(0, 5);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 0, 0, 90));
+        painter.drawRoundedRect(shadow, 3, 3);
+
+        // Artboard background
+        painter.setBrush(QColor(255, 255, 255));
+
+        if (artboard.id == activeArtboardId)
+            painter.setPen(QPen(QColor(61, 220, 255), 2));
+        else
+            painter.setPen(QPen(QColor(100, 100, 110), 1));
+
+        painter.drawRect(rect);
+
+        // Canvas contents
+        if (!artboard.image.isNull())
+        {
+            painter.save();
+
+            painter.setClipRect(rect);
+
+            painter.drawImage(
+                rect,
+                artboard.image,
+                artboard.image.rect()
+            );
+
+            painter.restore();
+        }
+
+        // Artboard name
+        painter.setPen(
+            artboard.id == activeArtboardId
+                ? QColor(61, 220, 255)
+                : QColor(190, 190, 195)
+        );
+
+        QRectF nameRect(
+            rect.left(),
+            rect.top() - 25,
+            qMax(120.0, rect.width()),
+            20
+        );
+
+        painter.drawText(
+            nameRect,
+            Qt::AlignLeft | Qt::AlignVCenter,
+            artboard.name
+        );
+    }
+
+    return;
+}
+
     if(processed.isNull()) {
 
         p.setPen(QColor("#6c7b78"));

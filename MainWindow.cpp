@@ -857,9 +857,12 @@ void MainWindow::buildUi(){
                                 reader.setScaledSize(QSize(64, 64));
                                 image = reader.read();
                             }
-                            auto *item = new QListWidgetItem(thumbnailIcon(image, 40), displayName);
-                            item->setData(Qt::UserRole, path);
-                            item->setSizeHint(QSize(240, 64)); // Explicit enforcement
+                            int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;
+                            const QString layerText=QString("%1  [%2]").arg(displayName).arg(layerCount);
+                            auto *item=new QListWidgetItem(thumbnailIcon(image,40),layerText);
+                            item->setData(Qt::UserRole,path);
+                            item->setData(Qt::UserRole+1,layerCount);
+                            item->setSizeHint(QSize(240,64)); // Explicit enforcement
                             railWidget->addItem(item);
                             if (path == currentFile) {
                                 item->setSelected(true);

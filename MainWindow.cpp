@@ -563,13 +563,14 @@ void MainWindow::buildUi(){
     };
     connect(subButtons,&QButtonGroup::idClicked,this,[this,settingsHost,settingCard,settingCardLayout,subNames](int index){
         QTimer::singleShot(0,this,[this,settingsHost,settingCard,settingCardLayout,subNames,index]{
-            clearLayoutItems(settingCardLayout);
             const QString name=subNames.value(tabs->currentIndex()).value(index,"Setting");
 
             // =================================================================
-            // EXPLICIT LAYER CARD OVERRIDE
+            // EXPLICIT LAYER CARD OVERRIDE WITH ABSOLUTE EARLY RETURN
             // =================================================================
             if (name == "Layer") {
+                clearLayoutItems(settingCardLayout);
+
                 auto *layerTopLayout = new QVBoxLayout;
                 layerTopLayout->setSpacing(2);
 
@@ -693,35 +694,42 @@ void MainWindow::buildUi(){
 
                 settingCard->show();
                 tabs->hide();
+
+                settingsHost->setMinimumHeight(qMin(320,settingsHost->layout()->sizeHint().height()));
+                settingsHost->updateGeometry();
+                if(auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
+                    outer->invalidate(); outer->activate();
+                }
+                return; // <--- STOPS HERE. GUARANTEES NO SLIDER FALLBACK.
             }
+
             // =================================================================
-            // STANDARD SLIDER CARD FALLBACK
+            // STANDARD SLIDER CARD FALLBACK FOR OTHER BUTTONS
             // =================================================================
-            else {
-                QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());
-                if(!target||!tabs->isAncestorOf(target)){
-                    const auto controls=tabs->currentWidget()->findChildren<QSlider*>();
-                    target=controls.value(index%qMax(1,controls.size()),nullptr);
-                }
-                if(target){
-                    auto *slider=new GradientSlider;
-                    slider->setRange(target->minimum(),target->maximum());
-                    slider->setValue(target->value());
-                    slider->setTitle(name);
-                    slider->setIcon(settingIcon(name));
-                    slider->setToolTip(target->toolTip());
-                    slider->setObjectName("ActiveSettingSlider");
-                    slider->setFixedHeight(48);
-                    settingCardLayout->addWidget(slider,1);
-                    connect(slider,&QSlider::valueChanged,target,&QSlider::setValue);
-                    connect(target,&QSlider::valueChanged,slider,[slider](int v){QSignalBlocker block(slider);slider->setValue(v);});
-                    settingCard->show();
-                    tabs->hide();
-                    slider->setFocus(Qt::OtherFocusReason);
-                }else{
-                    settingCard->hide();
-                    tabs->show();
-                }
+            clearLayoutItems(settingCardLayout);
+            QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());
+            if(!target||!tabs->isAncestorOf(target)){
+                const auto controls=tabs->currentWidget()->findChildren<QSlider*>();
+                target=controls.value(index%qMax(1,controls.size()),nullptr);
+            }
+            if(target){
+                auto *slider=new GradientSlider;
+                slider->setRange(target->minimum(),target->maximum());
+                slider->setValue(target->value());
+                slider->setTitle(name);
+                slider->setIcon(settingIcon(name));
+                slider->setToolTip(target->toolTip());
+                slider->setObjectName("ActiveSettingSlider");
+                slider->setFixedHeight(48);
+                settingCardLayout->addWidget(slider,1);
+                connect(slider,&QSlider::valueChanged,target,&QSlider::setValue);
+                connect(target,&QSlider::valueChanged,slider,[slider](int v){QSignalBlocker block(slider);slider->setValue(v);});
+                settingCard->show();
+                tabs->hide();
+                slider->setFocus(Qt::OtherFocusReason);
+            }else{
+                settingCard->hide();
+                tabs->show();
             }
 
             settingsHost->setMinimumHeight(qMin(320,settingsHost->layout()->sizeHint().height()));

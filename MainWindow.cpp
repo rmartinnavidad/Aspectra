@@ -1118,13 +1118,21 @@ void MainWindow::buildUi(){
                         if(!target.isEmpty()){if(!renderArtboard(contextArtboardId).save(target,"PNG"))showError("Could not export this artboard.");else status->setText("Artboard exported · "+target);}
                     }
                 };
+                railWidget->setContextMenuPolicy(Qt::CustomContextMenu);
                 railWidget->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
-                QObject::connect(railWidget->viewport(), &QWidget::customContextMenuRequested, railWidget,
-                    [railWidget, showArtboardContextMenu](const QPoint &position) {
-                        auto *item = railWidget->itemAt(position);
-                        const QString contextArtboardId = item ? item->data(Qt::UserRole).toString() : QString();
-                        if (!contextArtboardId.isEmpty()) showArtboardContextMenu(contextArtboardId, railWidget->viewport()->mapToGlobal(position));
-                    });
+                auto showRailContextMenu=[railWidget,showArtboardContextMenu](const QPoint &position){
+                    QPoint viewportPos=railWidget->viewport()->mapFromGlobal(railWidget->mapToGlobal(position));
+                    auto *item=railWidget->itemAt(viewportPos);
+                    if(!item)item=railWidget->itemAt(position);
+                    const QString contextArtboardId=item?item->data(Qt::UserRole).toString():QString();
+                    if(!contextArtboardId.isEmpty())showArtboardContextMenu(contextArtboardId,QCursor::pos());
+                };
+                QObject::connect(railWidget,&QWidget::customContextMenuRequested,railWidget,showRailContextMenu);
+                QObject::connect(railWidget->viewport(),&QWidget::customContextMenuRequested,railWidget,[railWidget,showArtboardContextMenu](const QPoint &position){
+                    auto *item=railWidget->itemAt(position);
+                    const QString contextArtboardId=item?item->data(Qt::UserRole).toString():QString();
+                    if(!contextArtboardId.isEmpty())showArtboardContextMenu(contextArtboardId,QCursor::pos());
+                });
                 QObject::connect(preview, &PreviewWidget::artboardContextMenuRequested, this,
                     [showArtboardContextMenu](const QString &artboardId, const QPoint &globalPosition) {
                         showArtboardContextMenu(artboardId, globalPosition);

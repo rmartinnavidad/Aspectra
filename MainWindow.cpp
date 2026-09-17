@@ -638,7 +638,7 @@ void MainWindow::buildUi(){
                 row1->addStretch();
 
                 auto *blendCombo = new QComboBox;
-                blendCombo->addItems({"Normal", "Pass Through", "Multiply", "Screen", "Overlay", "Color Dodge"});
+                blendCombo->addItems({"Pass Through", "Normal", "Multiply", "Screen", "Overlay", "Color Dodge"});
                 blendCombo->setFixedHeight(22);
                 blendCombo->setStyleSheet("QComboBox { background: #11141c; border: 1px solid #282c37; border-radius: 4px; font-size: 11px; padding-left: 6px; }");
                 row1->addWidget(blendCombo);
@@ -699,11 +699,10 @@ void MainWindow::buildUi(){
                 navRow->addWidget(crumbLabel, 1);
                 settingCardLayout->addLayout(navRow);
 
-                // Container for switching between the Horizontal Rail and Detailed Layer Rows
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail
+                // Page 0: Horizontal Artboard Rail (Draggable & Reorderable)
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
@@ -723,50 +722,100 @@ void MainWindow::buildUi(){
                 auto *detailRowList = new QListWidget;
                 detailRowList->setStyleSheet(
                     "QListWidget { background: #080a0f; border: 1px solid #1a1e28; border-radius: 6px; outline: none; padding: 2px; }"
-                    "QListWidget::item { height: 36px; border-bottom: 1px solid #12151d; color: #e0e4ee; font-size: 11px; padding: 2px 4px; }"
+                    "QListWidget::item { height: 38px; border-bottom: 1px solid #12151d; color: #e0e4ee; font-size: 11px; padding: 2px 6px; }"
                     "QListWidget::item:selected { background: #161b26; border: 1px solid #3ddcff; border-radius: 4px; color: #ffffff; }"
                 );
                 stackWidget->addWidget(detailRowList);
 
-                // Populate Root Rail
-                auto populateRail = [railWidget, backBtn, crumbLabel, stackWidget]() {
+                // Populate Root Rail from actual batch files / canvas layers
+                auto populateRail = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo]() {
                     railWidget->clear();
-                    for (int i = 1; i <= 2; ++i) {
-                        auto *item = new QListWidgetItem(QString("📁 Artboard %1").arg(i));
-                        item->setData(Qt::UserRole, i);
+                    QStringList paths = this->batch.files;
+                    if (!currentFile.isEmpty() && !paths.contains(currentFile)) paths.append(currentFile);
+                    for (auto it = canvasLayers.cbegin(); it != canvasLayers.cend(); ++it)
+                        if (!paths.contains(it.key())) paths.append(it.key());
+
+                    if (paths.isEmpty()) {
+                        auto *item = new QListWidgetItem("📁 Empty Canvas");
+                        item->setData(Qt::UserRole, QString());
                         railWidget->addItem(item);
+                    } else {
+                        for (const QString &path : paths) {
+                            const auto &layer = canvasLayers[path];
+                            QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
+                            auto *item = new QListWidgetItem("📁 " + displayName);
+                            item->setData(Qt::UserRole, path);
+                            railWidget->addItem(item);
+                        }
                     }
                     stackWidget->setCurrentIndex(0);
                     backBtn->hide();
                     crumbLabel->setText("Artboards (Horizontal Rail)");
+                    blendCombo->setCurrentText("Pass Through");
                 };
 
-                // Populate Detailed Layer Rows with Masks, FX badges, and Thumbnails
-                auto populateLayerRows = [detailRowList, backBtn, crumbLabel, stackWidget](const QString &artboardName) {
+                // Populate Detailed Layer Rows with Visibility Eye, Dual Thumbnails, and Badges
+                auto populateLayerRows = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
                     detailRowList->clear();
                     
-                    // Sample professional layer rows matching your design spec
-                    QStringList layerNames = {"Background Image", "Subject Composite", "Color Grade Adjustment", "Lighting Glow"};
-                    for (int i = 0; i < layerNames.size(); ++i) {
-                        auto *item = new QListWidgetItem(QString("👁  [🖼️] [🔲]  %1   fx  🔗").arg(layerNames[i]));
-                        item->setFlags(item->flags() | Qt::ItemIsEditable);
-                        detailRowList->addItem(item);
+                    // Render actual layers associated with this artboard/source
+                    auto *baseItem = new QListWidgetItem("👁  [🖼️] [🔲]  Canvas Base   fx  🔗");
+                    baseItem->setData(Qt::UserRole, "base");
+                    baseItem->setData(Qt::UserRole + 1, sourcePath);
+                    detailRowList->addItem(baseItem);
+
+                    if (sourcePath == currentFile) {
+                        for (int i = 0; i < timelineTracks.size(); ++i) {
+                            const auto &track = timelineTracks[i];
+                            QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
+                            auto *item = new QListWidgetItem(QString("👁  [🖼️] [🔲]  %1   fx  🔗").arg(tName));
+                            item->setData(Qt::UserRole, "track");
+                            item->setData(Qt::UserRole + 2, i);
+                            detailRowList->addItem(item);
+                        }
                     }
 
                     stackWidget->setCurrentIndex(1);
                     backBtn->show();
-                    crumbLabel->setText("Artboards / " + artboardName);
+                    crumbLabel->setText("Artboards / " + QFileInfo(sourcePath).completeBaseName());
+                    blendCombo->setCurrentText("Normal");
                 };
 
                 QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayerRows](QListWidgetItem *item) {
-                    if (item) populateLayerRows(item->text().section(' ', 1));
+                    if (item) {
+                        QString path = item->data(Qt::UserRole).toString();
+                        if (!path.isEmpty()) populateLayerRows(path);
+                    }
                 });
 
                 QObject::connect(backBtn, &QToolButton::clicked, populateRail);
                 populateRail();
 
+                // Bind Selection to Top Sliders
+                QObject::connect(detailRowList, &QListWidget::currentItemChanged, [this, blendCombo, opacitySlider = topContainer->findChildren<QSlider*>().value(0), fillSlider = topContainer->findChildren<QSlider*>().value(1)](QListWidgetItem *item) {
+                    if (!item || !opacitySlider || !fillSlider) return;
+                    QSignalBlocker b1(blendCombo), b2(opacitySlider), b3(fillSlider);
+                    QString kind = item->data(Qt::UserRole).toString();
+                    if (kind == "track") {
+                        int i = item->data(Qt::UserRole + 2).toInt();
+                        if (i >= 0 && i < timelineTracks.size()) {
+                            blendCombo->setCurrentText(timelineTracks[i].blendMode);
+                            opacitySlider->setValue(qRound(timelineTracks[i].opacity * 100));
+                            fillSlider->setValue(qRound(timelineTracks[i].fill * 100));
+                        }
+                    } else if (kind == "base") {
+                        QString path = item->data(Qt::UserRole + 1).toString();
+                        if (canvasLayers.contains(path)) {
+                            auto &layer = canvasLayers[path];
+                            blendCombo->setCurrentText(layer.blendMode);
+                            opacitySlider->setValue(qRound(layer.opacity * 100));
+                            fillSlider->setValue(qRound(layer.fill * 100));
+                        }
+                    }
+                });
+
                 // =============================================================
-                // 3. BOTTOM SECTION: COMPACT ACTION STRIP ([Mask] [Adj] [Folder] [New Layer] [Delete])
+                // 3. BOTTOM SECTION: COMPACT ACTION STRIP
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
                 actionRow->setSpacing(6);

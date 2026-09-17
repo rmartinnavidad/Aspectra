@@ -561,20 +561,151 @@ void MainWindow::buildUi(){
             settingsHost->updateGeometry();
         }
     };
-    connect(tabButtons,&QButtonGroup::idClicked,this,[this,showSettings](int index){tabs->setCurrentIndex(index);showSettings();});
-    tabs->setMinimumWidth(0);settingsHost->setMinimumWidth(0);carouselLayout->insertStretch(0);auto *subRail=new QScrollArea(settingsHost);subRail->setObjectName("SubSettingsRail");subRail->setFixedHeight(54);subRail->setFrameShape(QFrame::NoFrame);subRail->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);subRail->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);subRail->setWidgetResizable(true);auto *subHost=new QWidget(subRail);auto *subLayout=new QHBoxLayout(subHost);subLayout->setContentsMargins(0,3,0,3);subLayout->setSpacing(8);subRail->setWidget(subHost);settingsLayout->insertWidget(1,subRail);auto *subButtons=new QButtonGroup(subHost);subButtons->setExclusive(true);const QVector<QStringList> subNames{{"Frame","Canvas","Safe","Layer","Mask"},{"Hue","Saturation","Brightness","Contrast","Levels","Balance","Key","Auto"},{"Subject","Brush","Contract","Feather","Edge","Hair"},{"Colors","Detail","Smooth","Export"},{"Blend","Opacity","Stroke","Shadow","Glow","Bevel"},{"Start","End","Reset"},{"Base Color","Normal","Roughness","Metallic","Ambient Occlusion","Height / Displacement","Opacity","Emission","Specular","Glossiness","Cavity","Curvature","Subsurface","Clearcoat","Clearcoat Roughness","Sheen","Sheen Roughness","Anisotropy","Transmission","ORM","MRA","RMA","Sphere","Export"},{"Blend","Warp","Mirror","Export"},{"Sizes","Images","Videos","Quality","Archive"}};auto rebuildSubRail=[subLayout,subButtons,subNames](int category){for(auto *button:subButtons->buttons()){subButtons->removeButton(button);button->deleteLater();}while(auto *item=subLayout->takeAt(0))delete item;subLayout->addStretch();const auto &names=subNames.value(category);for(int i=0;i<names.size();++i){auto *button=new SettingRailButton(names[i]);button->setObjectName("SubRailIcon");button->setToolTip(names[i]);button->setCheckable(true);subLayout->addWidget(button);subButtons->addButton(button,i);}subLayout->addStretch();if(auto *first=static_cast<SettingRailButton*>(subButtons->button(0))){first->setChecked(true);first->setSelected(true);}};rebuildSubRail(0);auto selectSubSetting=[this,subButtons](int index){for(auto *button:subButtons->buttons())static_cast<SettingRailButton*>(button)->setSelected(button==subButtons->button(index));const auto controls=tabs->currentWidget()->findChildren<QSlider*>();if(!controls.isEmpty()){auto *control=controls.at(index%controls.size());control->setFocus(Qt::TabFocusReason);control->ensurePolished();}};connect(subButtons,&QButtonGroup::idClicked,this,selectSubSetting);connect(subButtons,&QButtonGroup::idClicked,this,[this,subNames](int index){if(!tabs||tabs->currentIndex()!=6)return;const QString name=subNames.value(6).value(index);if(name=="Sphere"){showMaterialPreview();return;}if(auto *control=textureMapSliders.value(name,nullptr)){control->setFocus(Qt::TabFocusReason);control->ensurePolished();if(textureMapPreview)textureMapPreview->setCurrentText(name);textureRefreshTimer.start();}});connect(tabs,&QTabWidget::currentChanged,this,[rebuildSubRail,tabButtons](int category){rebuildSubRail(category);for(auto *button:tabButtons->buttons())button->setIconSize(QSize(21,21));});
-    auto revealSubSetting=[this](int index){auto *outer=qobject_cast<QScrollArea*>(tabs->currentWidget());if(!outer)return;QWidget *scope=outer->widget();int controlIndex=index;if(tabs->currentIndex()==1){auto *colorTabs=qobject_cast<QTabWidget*>(scope);if(colorTabs){int page=0;if(index<=3){page=0;controlIndex=index;}else if(index==4){page=1;controlIndex=0;}else if(index==5){page=2;controlIndex=0;}else if(index==6){page=3;controlIndex=0;}else {page=4;controlIndex=0;}colorTabs->setCurrentIndex(page);scope=colorTabs->currentWidget();}}const auto controls=scope->findChildren<QSlider*>();if(controls.isEmpty())return;auto *control=controls.at(qBound(0,controlIndex,controls.size()-1));control->setFocus(Qt::TabFocusReason);QTimer::singleShot(0,this,[outer,control]{for(QWidget *parent=control->parentWidget();parent;parent=parent->parentWidget())if(auto *scroll=qobject_cast<QScrollArea*>(parent))scroll->ensureWidgetVisible(control,16,16);outer->ensureWidgetVisible(control,16,16);});};connect(subButtons,&QButtonGroup::idClicked,this,revealSubSetting);
-    auto *settingCard=new QWidget(settingsHost);
-    settingCard->setObjectName("ActiveSettingCard");
-    auto *settingCardLayout=new QVBoxLayout(settingCard);
-    settingCardLayout->setContentsMargins(12,0,12,0);
-    settingCardLayout->setSpacing(6);
-    settingsLayout->insertWidget(2,settingCard);
-    settingCard->hide();
     connect(subButtons,&QButtonGroup::idClicked,this,[this,settingsHost,settingCard,settingCardLayout,subNames](int index){
         QTimer::singleShot(0,this,[this,settingsHost,settingCard,settingCardLayout,subNames,index]{
             clearLayoutItems(settingCardLayout);
             const QString name=subNames.value(tabs->currentIndex()).value(index,"Setting");
+
+            // =================================================================
+            // CUSTOM DRILL-DOWN LAYER CARD OVERRIDE
+            // =================================================================
+            if (tabs->currentIndex() == 0 && name == "Layer") {
+                // 1. TOP SECTION: Blend, Locks, & Sliders
+                auto *layerTopLayout = new QVBoxLayout;
+                layerTopLayout->setSpacing(2);
+
+                auto *blendRow = new QHBoxLayout;
+                blendRow->setSpacing(4);
+                
+                auto *lockPixels = new QToolButton; lockPixels->setIcon(settingIcon("brush")); 
+                auto *lockPosition = new QToolButton; lockPosition->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/move tool.png")); 
+                auto *lockAll = new QToolButton; lockAll->setIcon(settingIcon("safe"));
+                for (auto* btn : {lockPixels, lockPosition, lockAll}) {
+                    btn->setCheckable(true);
+                    btn->setFixedSize(28, 28);
+                    btn->setStyleSheet("QToolButton { background: transparent; border: 1px solid #2d2d35; border-radius: 6px; } QToolButton:checked { background: #14111c; border: 1px solid #7a4dff; }");
+                    blendRow->addWidget(btn);
+                }
+                blendRow->addStretch();
+                
+                auto *blendModeCombo = new QComboBox;
+                blendModeCombo->addItems({"Pass Through", "Normal", "Multiply", "Screen", "Overlay", "Color Dodge"});
+                blendModeCombo->setFixedWidth(130);
+                blendModeCombo->setFixedHeight(28);
+                blendRow->addWidget(blendModeCombo);
+                layerTopLayout->addLayout(blendRow);
+
+                auto *opacitySlider = new GradientSlider(Qt::Horizontal);
+                opacitySlider->setRange(0, 100); opacitySlider->setValue(100);
+                opacitySlider->setTitle("Opacity"); opacitySlider->setIcon(settingIcon("opacity"));
+                opacitySlider->setFixedHeight(36);
+                layerTopLayout->addWidget(opacitySlider);
+
+                auto *fillSlider = new GradientSlider(Qt::Horizontal);
+                fillSlider->setRange(0, 100); fillSlider->setValue(100);
+                fillSlider->setTitle("Fill"); fillSlider->setIcon(settingIcon("colors"));
+                fillSlider->setFixedHeight(36);
+                layerTopLayout->addWidget(fillSlider);
+
+                settingCardLayout->addLayout(layerTopLayout);
+
+                // 2. MIDDLE SECTION: Drill-Down List & Breadcrumbs
+                auto *listSection = new QVBoxLayout;
+                listSection->setSpacing(2);
+                listSection->setContentsMargins(0, 6, 0, 0);
+
+                auto *breadcrumbRow = new QHBoxLayout;
+                auto *backBtn = new QToolButton;
+                backBtn->setText("‹ Back");
+                backBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
+                backBtn->setStyleSheet("QToolButton { color: #3ddcff; font-weight: bold; background: transparent; border: none; font-size: 13px; } QToolButton:hover { color: #ffffff; }");
+                backBtn->hide();
+                
+                auto *levelLabel = label("Artboards", "section");
+                levelLabel->setAlignment(Qt::AlignCenter);
+                
+                breadcrumbRow->addWidget(backBtn);
+                breadcrumbRow->addWidget(levelLabel, 1);
+                breadcrumbRow->addSpacing(48); // Balances the back button for true centering
+                listSection->addLayout(breadcrumbRow);
+
+                auto *layerList = new QListWidget;
+                layerList->setObjectName("DrillDownLayerList");
+                layerList->setMinimumHeight(140);
+                layerList->setSelectionMode(QAbstractItemView::SingleSelection);
+                layerList->setStyleSheet("QListWidget { background: #0b0e15; border-radius: 8px; border: 1px solid #1a202c; padding: 4px; } QListWidget::item { height: 38px; border-bottom: 1px solid #161a22; } QListWidget::item:selected { background: #1a202c; border: 1px solid #3ddcff; border-radius: 6px; }");
+                listSection->addWidget(layerList, 1);
+                
+                settingCardLayout->addLayout(listSection, 1);
+
+                // 3. BOTTOM SECTION: Action Bar
+                auto *actionBar = new QHBoxLayout;
+                actionBar->setSpacing(8);
+                actionBar->setContentsMargins(0, 6, 0, 0);
+                actionBar->addStretch();
+                
+                auto *addMaskBtn = new QToolButton; addMaskBtn->setIcon(settingIcon("mask"));
+                auto *addAdjBtn = new QToolButton; addAdjBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/editor_adjustments.png"));
+                auto *addGroupBtn = new QToolButton; addGroupBtn->setIcon(settingIcon("archive"));
+                auto *addLayerBtn = new QToolButton; addLayerBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/add layer.png"));
+                auto *deleteBtn = new QToolButton; deleteBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/delete anchor point tool.png"));
+
+                for (auto* btn : {addMaskBtn, addAdjBtn, addGroupBtn, addLayerBtn, deleteBtn}) {
+                    btn->setFixedSize(32, 32);
+                    btn->setIconSize(QSize(18, 18));
+                    btn->setStyleSheet("QToolButton { background: #161a22; border-radius: 16px; border: none; } QToolButton:hover { background: #232936; }");
+                    actionBar->addWidget(btn);
+                }
+                settingCardLayout->addLayout(actionBar);
+
+                // DRILL-DOWN NAVIGATION SIGNALS
+                auto populateRoot = [layerList, backBtn, levelLabel, blendModeCombo]() {
+                    layerList->clear();
+                    for (int i = 1; i <= 3; ++i) {
+                        auto *item = new QListWidgetItem(QString("  📁  Artboard %1").arg(i));
+                        item->setData(Qt::UserRole, "folder");
+                        layerList->addItem(item);
+                    }
+                    backBtn->hide();
+                    levelLabel->setText("Artboards");
+                    blendModeCombo->setCurrentText("Pass Through");
+                };
+
+                auto populateChildren = [layerList, backBtn, levelLabel, blendModeCombo](const QString& parentName) {
+                    layerList->clear();
+                    for (int i = 1; i <= 4; ++i) {
+                        auto *item = new QListWidgetItem(QString("  🖼️  Layer %1").arg(i));
+                        item->setData(Qt::UserRole, "layer");
+                        layerList->addItem(item);
+                    }
+                    backBtn->show();
+                    levelLabel->setText(parentName.mid(5));
+                    blendModeCombo->setCurrentText("Normal");
+                };
+
+                QObject::connect(layerList, &QListWidget::itemDoubleClicked, [populateChildren](QListWidgetItem *item) {
+                    if (item->data(Qt::UserRole).toString() == "folder") {
+                        populateChildren(item->text());
+                    }
+                });
+
+                QObject::connect(backBtn, &QToolButton::clicked, populateRoot);
+
+                populateRoot();
+
+                settingCard->show();
+                tabs->hide();
+                settingsHost->setMinimumHeight(qMin(320, settingsHost->layout()->sizeHint().height()));
+                settingsHost->updateGeometry();
+                if(auto *outer = qobject_cast<QVBoxLayout*>(settingsHost->parentWidget()->layout())) {
+                    outer->invalidate(); outer->activate();
+                }
+                return;
+            }
+
+            // =================================================================
+            // STANDARD SLIDER CARD FALLBACK
+            // =================================================================
             QSlider *target=qobject_cast<QSlider*>(QApplication::focusWidget());
             if(!target||!tabs->isAncestorOf(target)){
                 const auto controls=tabs->currentWidget()->findChildren<QSlider*>();

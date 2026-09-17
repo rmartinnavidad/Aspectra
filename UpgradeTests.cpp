@@ -96,7 +96,8 @@ int runFocusZoomTest(MainWindow &w){
         QStringList events;
         bool eventFilter(QObject *object,QEvent *event) override {
             if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseMove||event->type()==QEvent::MouseButtonRelease){
-                events<<QString("%1:%2").arg(object->objectName()).arg(int(event->type()));
+                auto *mouse=static_cast<QMouseEvent*>(event);
+                events<<QString("%1:%2 @%3,%4 global%5,%6 buttons%7").arg(object->objectName()).arg(int(event->type())).arg(mouse->position().x()).arg(mouse->position().y()).arg(mouse->globalPosition().x()).arg(mouse->globalPosition().y()).arg(int(mouse->buttons()));
                 if(events.size()>18)events.removeFirst();
             }
             return false;

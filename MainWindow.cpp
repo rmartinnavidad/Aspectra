@@ -938,6 +938,60 @@ void MainWindow::buildUi(){
                     syncLayerControls();
                 };
 
+                auto createArtboardAfter = [this, railWidget, populateRailPtr](const QString &after, bool duplicate) -> QString {
+                    if (duplicate && !canvasLayers.contains(after)) return {};
+                    const QString id = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
+                    CanvasLayer layer = duplicate ? canvasLayers.value(after) : CanvasLayer{};
+                    layer.source = id;
+                    layer.name = duplicate ? layer.name + " copy" : QString("Artboard %1").arg(this->batch.files.size() + 1);
+                    if (!layer.nativeSize.isValid()) layer.nativeSize = QSize(widthInput->value(), heightInput->value());
+                    if (duplicate && layer.artboardImage.isNull()) {
+                        if (after == currentFile) layer.artboardImage = original;
+                        else if (!after.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(after); layer.artboardImage = reader.read(); }
+                    }
+                    canvasLayers[id] = layer;
+                    const int insertAt = qBound(0, this->batch.files.indexOf(after) + 1, int(this->batch.files.size()));
+                    this->batch.files.insert(insertAt, id);
+                    if (duplicate) {
+                        const int count = timelineTracks.size();
+                        for (int i = 0; i < count; ++i) if (timelineTracks[i].artboardSource == after) {
+                            TimelineTrack copy = timelineTracks[i];copy.artboardSource = id;timelineTracks.append(copy);
+                        }
+                        updateTrackPanel();
+                    }
+                    updateBatchLabel();
+                    if (populateRailPtr) (*populateRailPtr)();
+                    selectFile(id);
+                    railWidget->setCurrentRow(insertAt);
+                    railWidget->scrollToItem(railWidget->item(insertAt), QAbstractItemView::EnsureVisible);
+                    autosaveProject();
+                    return id;
+                };
+                auto deleteArtboard = [this, populateRailPtr](const QString &path) {
+                    const int index = this->batch.files.indexOf(path);
+                    if (index < 0) return;
+                    this->batch.files.removeAt(index);
+                    canvasLayers.remove(path);
+                    timelineTracks.erase(std::remove_if(timelineTracks.begin(), timelineTracks.end(), [&path](const TimelineTrack &track) { return track.artboardSource == path; }), timelineTracks.end());
+                    updateTrackPanel();updateBatchLabel();
+                    if (currentFile == path) {
+                        if (this->batch.files.isEmpty()) clearMedia();
+                        else selectFile(this->batch.files[qMin(index, int(this->batch.files.size()) - 1)]);
+                    }
+                    if (populateRailPtr) (*populateRailPtr)();
+                    autosaveProject();
+                };
+                auto renderArtboard = [this](const QString &path) {
+                    const CanvasLayer layer = canvasLayers.value(path);
+                    QImage image = layer.artboardImage;
+                    if (image.isNull() && path == currentFile) image = original;
+                    if (image.isNull() && !path.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(path);image = reader.read(); }
+                    if (image.isNull()) { image = QImage(layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value()), QImage::Format_ARGB32);image.fill(Qt::transparent); }
+                    QVector<TimelineTrack> owned;
+                    for (const auto &track : timelineTracks) if (track.artboardSource == path) owned.append(track);
+                    return ImageProcessor::compositeTimeline(image, owned, 0);
+                };
+
                 QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayersPtr](QListWidgetItem *item) {
                     if (item && populateLayersPtr) {
                         QString path = item->data(Qt::UserRole).toString();
@@ -989,28 +1043,10 @@ void MainWindow::buildUi(){
                 }
                 settingCardLayout->addLayout(actionRow);
 
-                QObject::connect(newLayerBtn, &QToolButton::clicked, this, [this, stackWidget, railWidget, detailRowList, populateRailPtr, populateLayersPtr]() {
+                QObject::connect(newLayerBtn, &QToolButton::clicked, this, [this, stackWidget, detailRowList, populateLayersPtr, createArtboardAfter]() {
                     if (stackWidget->currentIndex() == 0) {
-                        // Artboards Mode: Create Artboard & ensure rightward appending
-                        QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
-                        CanvasLayer layer;
-                        layer.source = artboardId;
-                        layer.name = QString("Artboard %1").arg(this->batch.files.size() + 1);
-                        layer.nativeSize = QSize(widthInput->value(), heightInput->value());
-                        canvasLayers[artboardId] = layer;
-                        
-                        this->batch.files.append(artboardId);
-                        updateBatchLabel();
-                        
-                        if (populateRailPtr) (*populateRailPtr)();
-                        selectFile(artboardId);
-                        
-                        if (railWidget->count() > 0) {
-                            railWidget->setCurrentRow(railWidget->count() - 1);
-                            railWidget->scrollToItem(railWidget->item(railWidget->count() - 1), QAbstractItemView::EnsureVisible);
-                        }
+                        createArtboardAfter(this->batch.files.isEmpty() ? QString() : this->batch.files.last(), false);
                         status->setText("New artboard added");
-                        autosaveProject();
                     } else {
                         // Layers Mode: Create timeline track owned by current artboard
                         if (currentFile.isEmpty()) return;
@@ -1031,7 +1067,7 @@ void MainWindow::buildUi(){
                     }
                 });
 
-                QObject::connect(delBtn, &QToolButton::clicked, this, [this, stackWidget, detailRowList, railWidget, populateRailPtr, populateLayersPtr]() {
+                QObject::connect(delBtn, &QToolButton::clicked, this, [this, stackWidget, detailRowList, railWidget, populateLayersPtr, deleteArtboard]() {
                     if (stackWidget->currentIndex() == 1) {
                         // Delete Layer Track
                         auto *selected = detailRowList->currentItem();
@@ -1046,30 +1082,8 @@ void MainWindow::buildUi(){
                             }
                         }
                     } else {
-                        // Delete Artboard
                         auto *selected = railWidget->currentItem();
-                        if (selected) {
-                            QString path = selected->data(Qt::UserRole).toString();
-                            if (!path.isEmpty()) {
-                                int removedIndex = this->batch.files.indexOf(path);
-                                this->batch.files.removeOne(path);
-                                canvasLayers.remove(path);
-                                timelineTracks.erase(std::remove_if(timelineTracks.begin(), timelineTracks.end(), [&path](const TimelineTrack &track) { return track.artboardSource == path; }), timelineTracks.end());
-                                updateBatchLabel();
-                                updateTrackPanel();
-                                
-                                if (currentFile == path) {
-                                    if (!this->batch.files.isEmpty()) {
-                                        int nextIndex = qBound(0, removedIndex, int(this->batch.files.size()) - 1);
-                                        selectFile(this->batch.files[nextIndex]);
-                                    } else {
-                                        clearMedia();
-                                    }
-                                }
-                            }
-                            if (populateRailPtr) (*populateRailPtr)();
-                            status->setText("Artboard removed");
-                        }
+                        if (selected) { deleteArtboard(selected->data(Qt::UserRole).toString());status->setText("Artboard removed"); }
                     }
                 });
 

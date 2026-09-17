@@ -913,16 +913,16 @@ void MainWindow::buildUi(){
                         // Keep the original synthetic canvas first even in projects created
                         // before it was registered in the batch navigation order.
                         if (!currentFile.isEmpty() && currentFile.startsWith(QLatin1String("aspectra://")) &&
-                            canvasLayers.contains(currentFile) && !batch.files.contains(currentFile))
-                            batch.files.prepend(currentFile);
+                            canvasLayers.contains(currentFile) && !this->batch.files.contains(currentFile))
+                            this->batch.files.prepend(currentFile);
                         QString artboardId = "aspectra://artboard-" + QUuid::createUuid().toString(QUuid::Id128).left(8);
                         CanvasLayer layer;
                         layer.source = artboardId;
-                        layer.name = QString("Artboard %1").arg(batch.files.size() + 1);
+                        layer.name = QString("Artboard %1").arg(this->batch.files.size() + 1);
                         const QString selectedPath = railWidget->currentItem() ? railWidget->currentItem()->data(Qt::UserRole).toString() : currentFile;
                         layer.nativeSize = canvasLayers.value(selectedPath).nativeSize.isValid() ? canvasLayers.value(selectedPath).nativeSize : QSize(widthInput->value(), heightInput->value());
                         canvasLayers[artboardId] = layer;
-                        batch.files.append(artboardId);
+                        this->batch.files.append(artboardId);
                         updateBatchLabel();
                         selectFile(artboardId);
                         populateRail();
@@ -972,14 +972,14 @@ void MainWindow::buildUi(){
                         if (selected) {
                             QString path = selected->data(Qt::UserRole).toString();
                             if (!path.isEmpty()) {
-                                const int removedIndex = batch.files.indexOf(path);
-                                batch.files.removeOne(path);
+                                const int removedIndex = this->batch.files.indexOf(path);
+                                this->batch.files.removeOne(path);
                                 canvasLayers.remove(path);
                                 timelineTracks.erase(std::remove_if(timelineTracks.begin(), timelineTracks.end(), [&path](const TimelineTrack &track) { return track.artboardSource == path; }), timelineTracks.end());
                                 updateTrackPanel();
                                 updateBatchLabel();
                                 if (currentFile == path) {
-                                    if (!batch.files.isEmpty()) selectFile(batch.files[qBound(0, removedIndex, batch.files.size() - 1)]);
+                                    if (!this->batch.files.isEmpty()) selectFile(this->batch.files[qBound(0, removedIndex, int(this->batch.files.size()) - 1)]);
                                     else clearMedia();
                                 }
                             }

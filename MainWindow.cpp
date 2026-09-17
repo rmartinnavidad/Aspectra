@@ -893,6 +893,8 @@ void MainWindow::buildUi(){
                         if (railWidget->count() > 0) {
                             railWidget->setCurrentRow(railWidget->count() - 1);
                             railWidget->scrollToItem(railWidget->item(railWidget->count() - 1), QAbstractItemView::PositionAtRight);
+                        if (auto *bar = railWidget->horizontalScrollBar())
+                            bar->setValue(bar->maximum());    
                         }
                         refresh();
                         status->setText("New artboard added to workspace");

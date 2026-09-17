@@ -3,35 +3,37 @@
 # =====================================================================
 $ErrorActionPreference = "Stop"
 
-Write-Host "[1/5] Stopping running Aspectra instances..." -ForegroundColor Cyan
+Write-Host "`n[1/6] Stopping running Aspectra instances..." -ForegroundColor Cyan
 $runningProcesses = Get-Process -Name "Aspectra", "Aspectra X" -ErrorAction SilentlyContinue
 if ($runningProcesses) {
     foreach ($proc in $runningProcesses) {
+        Write-Host "   -> Stopped process ID: $($proc.Id)" -ForegroundColor DarkGray
         Stop-Process -InputObject $proc -Force -ErrorAction SilentlyContinue
     }
 }
 
-# Clear any stale CMake autogen locks that cause hanging
+Write-Host "[2/6] Clearing stale locks..." -ForegroundColor Cyan
 $lockFile = "C:\Users\rmart\Documents\Codex\2026-09-06\ki\work\aspectra-release-ninja\CMakeFiles\Aspectra_autogen.dir\autogen.lock"
 if (Test-Path $lockFile) {
-    Write-Host "   -> Clearing stale autogen lock..." -ForegroundColor Yellow
     Remove-Item -Path $lockFile -Force -ErrorAction SilentlyContinue
+    Write-Host "   -> Stale lock removed." -ForegroundColor Green
 }
 
-Write-Host "[2/5] Compiling via Ninja (Optimized Release mode)..." -ForegroundColor Cyan
+Write-Host "[3/6] Compiling via Ninja (Live Progress)..." -ForegroundColor Cyan
 $vc = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
 $cm = 'C:\Users\rmart\Documents\Codex\2026-08-30\how-else-can-i-expand-this\work\take_slicer\vendor\vcpkg\downloads\tools\cmake-4.4.2-windows\cmake-4.4.2-windows-x86_64\bin\cmake.exe'
 $build = 'C:\Users\rmart\Documents\Codex\2026-09-06\ki\work\aspectra-release-ninja'
 
-# Removed '--verbose' to prevent terminal buffer blocking, added explicit parallel execution
-$buildCmd = "call `"$vc`" >nul && `"$cm`" --build `"$build`" --config Release --parallel"
+# By executing without --verbose, Ninja gives a clean, live-updating [XX/YY] progress indicator.
+# We pipe ONLY the vcvars setup to >nul to hide the Microsoft copyright spam.
+$buildCmd = "call `"$vc`" >nul 2>&1 && `"$cm`" --build `"$build`" --config Release --parallel"
 cmd /c $buildCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
     exit $LASTEXITCODE
 }
 
-Write-Host "[3/5] Inspecting dependencies with dumpbin..." -ForegroundColor Cyan
+Write-Host "`n[4/6] Inspecting dependencies..." -ForegroundColor Cyan
 $source = "$build\Aspectra.exe"
 $targetDir = 'C:\Users\rmart\Documents\Codex\2026-09-06\ki\outputs\Aspectra X'
 $target = "$targetDir\Aspectra.exe"
@@ -43,13 +45,16 @@ if ($deps -match '(?im)^\s*(Qt6\S*d\.dll|MSVCRTD\.dll|ucrtbased\.dll)\s*$') {
     throw "Fatal: Debug dependency found in Release build!"
 }
 
-Write-Host "[4/5] Deploying canonical executable & running windeployqt..." -ForegroundColor Cyan
+Write-Host "[5/6] Deploying executable & verifying Qt runtime..." -ForegroundColor Cyan
 if (!(Test-Path $targetDir)) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
 Copy-Item -LiteralPath $source -Destination $target -Force
+# Run windeployqt to ensure DLLs are up to date, but hide its massive file list output to keep it fast
 & $deploy --release --compiler-runtime --force --no-translations $target | Out-Null
+Write-Host "   -> Deployment successful." -ForegroundColor Green
 
-Write-Host "[5/5] Re-launching Aspectra X & triggering background git sync..." -ForegroundColor Green
-& $target
+Write-Host "[6/6] Launching Aspectra X & triggering Git sync..." -ForegroundColor Cyan
+# Start-Process runs the app asynchronously so the terminal immediately frees up
+Start-Process -FilePath $target
 
 # Fire-and-forget headless git background sync
 Start-Job -ScriptBlock {
@@ -63,4 +68,4 @@ Start-Job -ScriptBlock {
     }
 } | Out-Null
 
-Write-Host "Pipeline complete. App is live and syncing!" -ForegroundColor Green
+Write-Host "`nPipeline complete! App is live and syncing in the background." -ForegroundColor Green

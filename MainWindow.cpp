@@ -762,6 +762,18 @@ void MainWindow::buildUi(){
                 // --- Shared Lambdas using shared_ptr to safely break scope dead-ends ---
                 auto populateRailPtr = std::make_shared<std::function<void()>>();
                 auto populateLayersPtr = std::make_shared<std::function<void(const QString&)>>();
+                auto thumbnailIcon = [](const QImage &image, int side) {
+                    QPixmap tile(side, side);
+                    tile.fill(QColor("#161a22"));
+                    QPainter painter(&tile);
+                    for (int y = 0; y < side; y += 8) for (int x = 0; x < side; x += 8)
+                        painter.fillRect(x, y, 8, 8, ((x + y) / 8) % 2 ? QColor("#252b30") : QColor("#161b20"));
+                    if (!image.isNull()) {
+                        const QImage fitted = image.scaled(side - 4, side - 4, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                        painter.drawImage((side - fitted.width()) / 2, (side - fitted.height()) / 2, fitted);
+                    }
+                    return QIcon(tile);
+                };
                 auto showArtboardWorkspace = [this]() {
                     QVector<PreviewArtboard> artboards;
                     qreal nextX = 0;
@@ -789,11 +801,11 @@ void MainWindow::buildUi(){
                     else preview->clearArtboards();
                 };
 
-                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls]() {
+                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls, thumbnailIcon]() {
                     railWidget->clear();
                     
                     if (this->batch.files.isEmpty()) {
-                        auto *item = new QListWidgetItem("📁 Blank Canvas");
+                        auto *item = new QListWidgetItem("Blank Canvas");
                         item->setData(Qt::UserRole, QString());
                         railWidget->addItem(item);
                     } else {
@@ -802,7 +814,14 @@ void MainWindow::buildUi(){
                             const auto &layer = canvasLayers[path];
                             QString displayName = layer.name.isEmpty() ? QFileInfo(path).completeBaseName() : layer.name;
                             if (displayName.isEmpty()) displayName = "Artboard";
-                            auto *item = new QListWidgetItem("📁 " + displayName);
+                            QImage image = layer.artboardImage;
+                            if (image.isNull() && path == currentFile) image = original;
+                            if (image.isNull() && !path.startsWith(QLatin1String("aspectra://"))) {
+                                QImageReader reader(path);
+                                reader.setScaledSize(QSize(64, 64));
+                                image = reader.read();
+                            }
+                            auto *item = new QListWidgetItem(thumbnailIcon(image, 40), displayName);
                             item->setData(Qt::UserRole, path);
                             item->setSizeHint(QSize(240, 64)); // Explicit enforcement
                             railWidget->addItem(item);

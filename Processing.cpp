@@ -96,6 +96,8 @@ QImage ImageProcessor::compositeTimeline(const QImage &source,const QVector<Time
         painter.save();
         if(track.blendMode=="Screen")painter.setCompositionMode(QPainter::CompositionMode_Screen);
         else if(track.blendMode=="Multiply")painter.setCompositionMode(QPainter::CompositionMode_Multiply);
+        else if(track.blendMode=="Overlay")painter.setCompositionMode(QPainter::CompositionMode_Overlay);
+        else if(track.blendMode=="Color Dodge")painter.setCompositionMode(QPainter::CompositionMode_ColorDodge);
         else if(track.blendMode=="Lighten")painter.setCompositionMode(QPainter::CompositionMode_Lighten);
         painter.setOpacity(std::clamp(opacity,0.,1.));
         painter.translate(position);painter.rotate(rotation);painter.scale(std::max(.01,scale.x()),std::max(.01,scale.y()));

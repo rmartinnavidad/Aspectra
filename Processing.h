@@ -54,7 +54,7 @@ struct TimelineTrack {
     double letterSpacing=0.,lineSpacing=100.,kerning=0.,verticalScale=100.,horizontalScale=100.,baseline=0.,highlightWidth=0.,sharpness=100.;
     bool fontBold=true,fontItalic=false,allCaps=false,smallCaps=false,superscript=false,subscript=false,underline=false,textStroke=false;
     bool standardLigature=true,contextualAlternates=true,discretionaryLigature=false,swash=false,stylisticAlternates=false,tiltingAlternates=false,ordinals=false,fractions=false;
-    bool enabled=true,locked=false,muted=false;
+    bool enabled=true,locked=false,muted=false,lockPixels=false,lockPosition=false;
     QVector<TimelineKeyframe> keyframes;
 };
 struct MediaInfo {

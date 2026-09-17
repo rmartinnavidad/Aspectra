@@ -614,7 +614,7 @@ void MainWindow::buildUi(){
                 settingCardLayout->setSpacing(6);
 
                 // =============================================================
-                // 1. TOP SECTION: FLUID HEADER (Matches app style)
+                // 1. TOP SECTION: SLIM HEADER (Locks, Blend Mode, Slim Sliders)
                 // =============================================================
                 auto *topContainer = new QWidget;
                 auto *topLayout = new QVBoxLayout(topContainer);
@@ -644,7 +644,6 @@ void MainWindow::buildUi(){
                 row1->addWidget(blendCombo);
                 topLayout->addLayout(row1);
 
-                // Using the software's native GradientSlider for Opacity and Fill
                 auto createGradientSliderRow = [](const QString &title, int defaultVal) {
                     auto *sliderRow = new QHBoxLayout;
                     sliderRow->setSpacing(8);
@@ -677,12 +676,12 @@ void MainWindow::buildUi(){
                 settingCardLayout->addWidget(topContainer);
 
                 // =============================================================
-                // 2. MIDDLE SECTION: FLUID NAVIGATION & RAIL
+                // 2. MIDDLE SECTION: NAVIGATION & VIEW SWITCHER
                 // =============================================================
                 auto *navRow = new QHBoxLayout;
                 navRow->setSpacing(6);
                 auto *backBtn = new QToolButton;
-                backBtn->setText("‹ Back");
+                backBtn->setText("‹ Back to Artboards");
                 backBtn->setToolButtonStyle(Qt::ToolButtonTextOnly);
                 backBtn->setStyleSheet("QToolButton { color: #3ddcff; font-size: 11px; font-weight: bold; background: transparent; border: none; padding: 0; }"
                                        "QToolButton:hover { color: #ffffff; }");
@@ -698,11 +697,13 @@ void MainWindow::buildUi(){
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
-                // Page 0: Horizontal Artboard Rail matching the app's dark minimal aesthetic
+                // Page 0: Horizontal Artboard Rail (Restored to 240px width as requested)
                 auto *railWidget = new QListWidget;
                 railWidget->setFlow(QListView::LeftToRight);
                 railWidget->setWrapping(false);
                 railWidget->setFixedHeight(96);
+                railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+                railWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 railWidget->setDragEnabled(true);
                 railWidget->setAcceptDrops(true);
                 railWidget->setDropIndicatorShown(true);
@@ -714,7 +715,7 @@ void MainWindow::buildUi(){
                 );
                 stackWidget->addWidget(railWidget);
 
-                // Page 1: Layer Rows matching software list items
+                // Page 1: Detailed Layer Rows
                 auto *detailRowList = new QListWidget;
                 detailRowList->setStyleSheet(
                     "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
@@ -755,7 +756,7 @@ void MainWindow::buildUi(){
                 populateLayers = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo](const QString &sourcePath) {
                     detailRowList->clear();
 
-                    auto createLayerRow = [](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
+                    auto createLayerRow = [this](const QString &layerName, bool isVisible, bool hasMask, bool hasFx, bool isLinked, std::function<void(bool)> onToggleVisibility) {
                         auto *rowItemWidget = new QWidget;
                         auto *rowLayout = new QHBoxLayout(rowItemWidget);
                         rowLayout->setContentsMargins(4, 2, 4, 2);
@@ -860,7 +861,7 @@ void MainWindow::buildUi(){
                 populateRail();
 
                 // =============================================================
-                // 3. BOTTOM SECTION: COMPACT ACTION STRIP
+                // 3. BOTTOM SECTION: COMPACT ACTION STRIP (Context-Aware)
                 // =============================================================
                 auto *actionRow = new QHBoxLayout;
                 actionRow->setSpacing(8);
@@ -881,6 +882,60 @@ void MainWindow::buildUi(){
                     actionRow->addWidget(btn);
                 }
                 settingCardLayout->addLayout(actionRow);
+
+                // Wire action strip buttons to respect whether user is on Artboards view (Page 0) or Layers view (Page 1)
+                QObject::connect(newLayerBtn, &QToolButton::clicked, [this, stackWidget, populateRail]() {
+                    if (stackWidget->currentIndex() == 0) {
+                        // Artboards mode: Create a new blank project/artboard
+                        createNewProject(widthInput->value(), heightInput->value(), 300, true, "RGB", "sRGB IEC61966-2.1", Qt::transparent);
+                        populateRail();
+                        status->setText("New artboard created");
+                    } else {
+                        // Layers mode: Add a new transparent layer/track
+                        TimelineTrack track;
+                        track.type = TimelineTrack::Image;
+                        track.name = QString("Layer %1").arg(timelineTracks.size() + 1);
+                        track.image = QImage(widthInput->value(), heightInput->value(), QImage::Format_ARGB32);
+                        track.image.fill(Qt::transparent);
+                        track.start = 0;
+                        track.end = qMax(5., media.duration);
+                        timelineTracks << track;
+                        updateTrackPanel();
+                        refresh();
+                        status->setText("New layer added to artboard");
+                    }
+                });
+
+                QObject::connect(delBtn, &QToolButton::clicked, [this, stackWidget, detailRowList, railWidget, populateRail]() {
+                    if (stackWidget->currentIndex() == 1) {
+                        // Layers mode: Delete selected layer track
+                        auto *selected = detailRowList->currentItem();
+                        if (selected && selected->data(Qt::UserRole).toString() == "track") {
+                            int idx = selected->data(Qt::UserRole + 2).toInt();
+                            if (idx >= 0 && idx < timelineTracks.size()) {
+                                timelineTracks.removeAt(idx);
+                                updateTrackPanel();
+                                refresh();
+                                delete selected;
+                                status->setText("Layer deleted");
+                            }
+                        }
+                    } else {
+                        // Artboards mode: Clear current media/batch item
+                        clearMedia();
+                        populateRail();
+                        status->setText("Artboard removed");
+                    }
+                });
+
+                QObject::connect(maskBtn, &QToolButton::clicked, [this]() {
+                    if (currentFile.isEmpty() || original.isNull()) return;
+                    auto &layer = canvasLayers[currentFile];
+                    layer.mask = QImage(original.size(), QImage::Format_Grayscale8);
+                    layer.mask.fill(255);
+                    preview->setLayerMask(layer.mask);
+                    status->setText("Layer mask created");
+                });
 
                 settingCard->show();
                 tabs->hide();

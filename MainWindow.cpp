@@ -46,6 +46,20 @@ private:
 QIcon settingIcon(const QString &name);
 QString imageAsBase64(const QImage &image){if(image.isNull())return {};QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);image.save(&buffer,"PNG");return QString::fromLatin1(bytes.toBase64());}
 QImage imageFromBase64(const QJsonValue &value){return QImage::fromData(QByteArray::fromBase64(value.toString().toLatin1()),"PNG");}
+QJsonObject trackAsJson(const TimelineTrack &track){
+    QJsonObject item{{"type",int(track.type)},{"name",track.name},{"text",track.text},{"source",track.source},{"artboardSource",track.artboardSource},{"blendMode",track.blendMode},{"x",track.position.x()},{"y",track.position.y()},{"scaleX",track.scale.x()},{"scaleY",track.scale.y()},{"rotation",track.rotation},{"opacity",track.opacity},{"fill",track.fill},{"start",track.start},{"end",track.end},{"enabled",track.enabled},{"isGroup",track.isGroup}};
+    if(!track.image.isNull())item["imagePngBase64"]=imageAsBase64(track.image);
+    return item;
+}
+TimelineTrack trackFromJson(const QJsonObject &item){
+    TimelineTrack track;track.type=TimelineTrack::Type(qBound(0,item.value("type").toInt(),int(TimelineTrack::Effect)));
+    track.name=item.value("name").toString();track.text=item.value("text").toString();track.source=item.value("source").toString();
+    track.artboardSource=item.value("artboardSource").toString();track.blendMode=item.value("blendMode").toString("Normal");
+    track.position={item.value("x").toDouble(),item.value("y").toDouble()};track.scale={item.value("scaleX").toDouble(1),item.value("scaleY").toDouble(1)};
+    track.rotation=item.value("rotation").toDouble();track.opacity=item.value("opacity").toDouble(1);track.fill=item.value("fill").toDouble(1);
+    track.start=item.value("start").toDouble();track.end=item.value("end").toDouble();track.enabled=item.value("enabled").toBool(true);track.isGroup=item.value("isGroup").toBool(false);
+    track.image=imageFromBase64(item.value("imagePngBase64"));return track;
+}
 class CanvasAspectPreview final : public QWidget {
 public:
     explicit CanvasAspectPreview(QWidget *parent=nullptr):QWidget(parent){setMinimumSize(220,180);setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);}
@@ -492,6 +506,7 @@ void MainWindow::buildUi(){
             layers.append(item);
         }
         root["layers"]=layers;
+        QJsonArray tracks;for(const auto &track:timelineTracks)tracks.append(trackAsJson(track));root["tracks"]=tracks;
         const auto a=adjustments();root["adjustments"]=QJsonObject{{"zoom",a.zoom},{"hue",a.hue},{"saturation",a.saturation},{"brightness",a.brightness},{"contrast",a.contrast},{"keyEnabled",a.chromaKey},{"keyColor",a.keyColor.name(QColor::HexArgb)},{"keyTolerance",a.keyTolerance},{"keySoftness",a.keySoftness},{"keyDespill",a.keyDespill},{"keyLumaProtect",a.keyLumaProtect},{"keyMatteBias",a.keyMatteBias},{"keyCleanBlack",a.keyCleanBlack},{"keyCleanWhite",a.keyCleanWhite}};
         QFile out(path);if(!out.open(QIODevice::WriteOnly)){showError("Could not save project.");return;}
         out.write(QJsonDocument(root).toJson(QJsonDocument::Indented));status->setText("Project saved · artboards and masks are editable on reopen");
@@ -1009,7 +1024,20 @@ void MainWindow::buildUi(){
                     if (image.isNull()) { image = QImage(layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value()), QImage::Format_ARGB32);image.fill(Qt::transparent); }
                     QVector<TimelineTrack> owned;
                     for (const auto &track : timelineTracks) if (track.artboardSource == path) owned.append(track);
-                    return ImageProcessor::compositeTimeline(image, owned, 0);
+                    QImage result = ImageProcessor::compositeTimeline(image, owned, 0).convertToFormat(QImage::Format_ARGB32);
+                    if (!layer.mask.isNull()) {
+                        const QImage mask = layer.mask.scaled(result.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_Grayscale8);
+                        for (int y = 0; y < result.height(); ++y) {
+                            QRgb *pixels = reinterpret_cast<QRgb*>(result.scanLine(y));
+                            const uchar *alpha = mask.constScanLine(y);
+                            for (int x = 0; x < result.width(); ++x) pixels[x] = qRgba(qRed(pixels[x]),qGreen(pixels[x]),qBlue(pixels[x]),qAlpha(pixels[x])*alpha[x]/255);
+                        }
+                    }
+                    if (layer.opacity < 1 || layer.fill < 1) {
+                        QImage faded(result.size(), QImage::Format_ARGB32);faded.fill(Qt::transparent);
+                        QPainter painter(&faded);painter.setOpacity(qBound(0., layer.opacity * layer.fill, 1.));painter.drawImage(QPoint(), result);result = faded;
+                    }
+                    return result;
                 };
                 railWidget->viewport()->setContextMenuPolicy(Qt::CustomContextMenu);
                 QObject::connect(railWidget->viewport(), &QWidget::customContextMenuRequested, railWidget,
@@ -1686,6 +1714,7 @@ void MainWindow::autosaveProject(){
         layers.append(item);
     }
     document["layers"]=layers;
+    QJsonArray tracks;for(const auto &track:timelineTracks)tracks.append(trackAsJson(track));document["tracks"]=tracks;
     QSaveFile out(recoveryFilePath());if(!out.open(QIODevice::WriteOnly))return;
     out.write(QJsonDocument(document).toJson(QJsonDocument::Compact));out.commit();
 }
@@ -1696,7 +1725,7 @@ void MainWindow::openProjectFile(const QString &path){
     if(!document.isObject()){showError("This is not a valid Aspectra project.");return;}
     const QJsonObject root=document.object(),canvas=root.value("canvas").toObject();
     const int width=canvas.value("width").toInt(1024),height=canvas.value("height").toInt(1024);
-    QStringList sources;canvasLayers.clear();
+    QStringList sources;canvasLayers.clear();timelineTracks.clear();
     for(const auto &value:root.value("layers").toArray()){
         const QJsonObject item=value.toObject();const QString source=item.value("source").toString();
         if(source.isEmpty()||(!source.startsWith(QLatin1String("aspectra://"))&&!QFileInfo::exists(source)))continue;
@@ -1705,9 +1734,11 @@ void MainWindow::openProjectFile(const QString &path){
         layer.nativeSize={item.value("width").toInt(),item.value("height").toInt()};
         layer.visible=item.value("visible").toBool(true);layer.opacity=item.value("opacity").toDouble(1);layer.fill=item.value("fill").toDouble(1);
         layer.blendMode=item.value("blendMode").toString("Normal");layer.lockPosition=item.value("lockPosition").toBool(false);
-        layer.mask=imageFromBase64(item.value("maskPngBase64"));layer.artboardImage=imageFromBase64(item.value("imagePngBase64"));
+        layer.mask=imageFromBase64(item.value("maskPngBase64")).convertToFormat(QImage::Format_Grayscale8);layer.artboardImage=imageFromBase64(item.value("imagePngBase64"));
         sources<<source;canvasLayers[source]=layer;
     }
+    for(const auto &value:root.value("tracks").toArray())timelineTracks.append(trackFromJson(value.toObject()));
+    updateTrackPanel();
     setDimensions(width,height);
     if(sources.isEmpty()){
         createNewProject(width,height,QSettings().value("newProjectResolution",300).toInt(),true,QSettings().value("newProjectColorMode","RGB").toString(),QSettings().value("newProjectProfile","sRGB IEC61966-2.1").toString(),Qt::transparent);

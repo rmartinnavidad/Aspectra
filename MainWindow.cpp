@@ -1219,7 +1219,7 @@ bool MainWindow::eventFilter(QObject *watched,QEvent *event){
                             event->type()==QEvent::MouseButtonRelease)){
         auto *mouse=static_cast<QMouseEvent*>(event);
         if(event->type()==QEvent::MouseButtonPress && mouse->button()==Qt::LeftButton){
-            if(auto *slider=dynamic_cast<GradientSlider*>(QApplication::focusWidget());slider && slider->objectName()=="ActiveSettingSlider" && slider->isVisible() && slider->isEnabled()){
+            if(auto *slider=dynamic_cast<GradientSlider*>(QApplication::focusWidget());slider && slider->objectName()=="ActiveSettingSlider" && slider->isVisible() && slider->isEnabled() && preview->cursor().shape()==Qt::ArrowCursor){
                 blindSlider=slider;
                 blindDragOrigin=mouse->globalPosition();
                 blindValueOrigin=slider->value();

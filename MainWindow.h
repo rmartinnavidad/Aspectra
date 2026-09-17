@@ -38,6 +38,9 @@ private:
     BatchManager batch;QImage original;QString currentFile,lastFolder,recordFile;MediaInfo media;
     QMap<QString,CanvasLayer> canvasLayers;QVector<TimelineTrack> timelineTracks;
     PreviewWidget *preview=nullptr;
+    QPointer<QObject> blindSlider;
+    QPointF blindDragOrigin;
+    int blindValueOrigin=0;
     QLabel *filename=nullptr,*status=nullptr,*info=nullptr,*batchLabel=nullptr,*zoomValue=nullptr,*thumbnail=nullptr,*timeLabel=nullptr,*navLabel=nullptr;
     QSpinBox *widthInput=nullptr,*heightInput=nullptr,*quality=nullptr,*crf=nullptr,*textLayerSize=nullptr,*textLayerX=nullptr,*textLayerY=nullptr,*trackX=nullptr,*trackY=nullptr,*trackScale=nullptr,*trackRotation=nullptr,*trackOpacity=nullptr;
     QSpinBox *canvasX=nullptr,*canvasY=nullptr;

@@ -1214,6 +1214,33 @@ void MainWindow::keyPressEvent(QKeyEvent *event){
     AspectraWindow::keyPressEvent(event);
 }
 bool MainWindow::eventFilter(QObject *watched,QEvent *event){
+    // A focused active slider can be adjusted directly from the canvas. This
+    // consumes that drag only; ordinary painting, panning, and clicks remain.
+    if(watched==preview && (event->type()==QEvent::MouseButtonPress ||
+                            event->type()==QEvent::MouseMove ||
+                            event->type()==QEvent::MouseButtonRelease)){
+        auto *mouse=static_cast<QMouseEvent*>(event);
+        if(event->type()==QEvent::MouseButtonPress && mouse->button()==Qt::LeftButton){
+            if(auto *slider=qobject_cast<GradientSlider*>(QApplication::focusWidget());slider && slider->isVisible() && slider->isEnabled()){
+                blindSlider=slider;
+                blindDragOrigin=mouse->globalPosition();
+                blindValueOrigin=slider->value();
+                slider->setCanvasEmphasis(true);
+                return true;
+            }
+        }else if(event->type()==QEvent::MouseMove && blindSlider && (mouse->buttons()&Qt::LeftButton)){
+            if(auto *slider=qobject_cast<GradientSlider*>(blindSlider.data())){
+                const qreal delta=mouse->globalPosition().x()-blindDragOrigin.x();
+                const int range=slider->maximum()-slider->minimum();
+                slider->setValueWithResistance(blindValueOrigin+qRound(delta*range/qMax(120,preview->width())));
+            }
+            return true;
+        }else if(event->type()==QEvent::MouseButtonRelease && mouse->button()==Qt::LeftButton && blindSlider){
+            if(auto *slider=qobject_cast<GradientSlider*>(blindSlider.data()))slider->setCanvasEmphasis(false);
+            blindSlider.clear();
+            return true;
+        }
+    }
     // Focus canvas owns every wheel event that reaches a rail or the empty
     // shell, so zoom-out cannot be trapped by a transparent overlay.
     const bool focusCanvas=preview&&preview->parentWidget()&&preview->parentWidget()->objectName()=="shell";

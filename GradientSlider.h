@@ -66,93 +66,135 @@ protected:
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing);
-        const bool horizontal=orientation()==Qt::Horizontal;
-        const qreal first=1.0,last=(horizontal?width():height())-1.0;
-        const qreal center=horizontal?height()/2.0:width()/2.0;
-        const qreal fraction=maximum()==minimum()?0.0:qreal(value()-minimum())/qreal(maximum()-minimum());
-        QStyleOptionSlider option;initStyleOption(&option);
-        const qreal position=first+(last-first)*(option.upsideDown?1.0-fraction:fraction);
-        const qreal life=(std::sin(phase*6.28318530718)+1.0)*0.5;
-        const QRectF track=QRectF(rect()).adjusted(1,1,-1,-1);
-        if(track.isEmpty())return;
-        const qreal radius=qMin(track.width(),track.height())/2.0;
-        QPainterPath pill;pill.addRoundedRect(track,radius,radius);
-        const qreal start=option.upsideDown?position:first;
-        const qreal length=(last-first)*fraction;
-        const QRectF fill=horizontal?QRectF(start,track.top(),length,track.height()):QRectF(track.left(),start,track.width(),length);
-        QPainterPath fillRectangle;fillRectangle.addRect(fill);
-        const QPainterPath fillPath=pill.intersected(fillRectangle);
-        p.setPen(Qt::NoPen);
-        p.fillPath(pill,QColor("#171a1d"));
-        QLinearGradient gradient=horizontal?QLinearGradient(track.topLeft(),track.topRight()):QLinearGradient(track.bottomLeft(),track.topLeft());
-        gradient.setColorAt(0,QColor("#57dd7b"));
-        gradient.setColorAt(qBound(0.12,0.46+life*0.26,0.86),QColor("#3ddcff"));
-        gradient.setColorAt(1,QColor("#3d91fb"));
-        p.fillPath(fillPath,gradient);
-        const QPointF handle=horizontal?QPointF(position,center):QPointF(center,position);
-        const qreal glowPosition=horizontal?first+(position-first)*phase:last-(last-position)*phase;
-        const QPointF flowing=horizontal?QPointF(glowPosition,center):QPointF(center,glowPosition);
-        QRadialGradient fluid(flowing,32);
-        fluid.setColorAt(0,QColor("#e5fff4"));
-        fluid.setColorAt(.20,QColor(61,220,255,140));
-        fluid.setColorAt(.62,QColor(61,220,255,40));
-        fluid.setColorAt(1,QColor(61,220,255,0));
-        p.save();p.setClipPath(fillPath);p.setBrush(fluid);p.drawEllipse(flowing,32,11);p.restore();
-        p.save();p.setClipPath(pill);
-        if(edgeTension>0){
-            QRadialGradient warning(handle,28);
-            warning.setColorAt(0,QColor(255,50,50,qRound(150*edgeTension)));
-            warning.setColorAt(1,QColor(255,50,50,0));
-            p.setBrush(warning);p.drawEllipse(handle,28,28);
+        const bool horizontal = orientation() == Qt::Horizontal;
+        
+        QStyleOptionSlider option;
+        initStyleOption(&option);
+
+        // 1. ISOLATED VERTICAL DRAWING LOGIC (Fixes the giant floating bar glitch)
+        if (!horizontal) {
+            const qreal center = width() / 2.0;
+            const qreal first = 8.0, last = height() - 8.0;
+            const qreal fraction = maximum() == minimum() ? 0.0 : qreal(value() - minimum()) / qreal(maximum() - minimum());
+            const qreal position = first + (last - first) * (option.upsideDown ? 1.0 - fraction : fraction);
+
+            // Draw a thin, elegant track for vertical sliders
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor("#171a1d"));
+            p.drawRoundedRect(QRectF(center - 2.0, first, 4.0, last - first), 2.0, 2.0);
+
+            // Draw thin fill
+            QLinearGradient vGrad(0, option.upsideDown ? last : first, 0, position);
+            vGrad.setColorAt(0, QColor("#57dd7b"));
+            vGrad.setColorAt(1, QColor("#3d91fb"));
+            p.setBrush(vGrad);
+            p.drawRoundedRect(QRectF(center - 2.0, option.upsideDown ? position : first, 4.0, (last - first) * fraction), 2.0, 2.0);
+
+            // Draw small handle
+            const bool active = hovered || dragging || hasFocus();
+            p.setPen(QPen(active ? Qt::white : QColor("#77b4ff"), 1));
+            p.setBrush(QColor("#3d91fb"));
+            p.drawEllipse(QPointF(center, position), 6.0, 6.0);
+            return; // EXIT EARLY so it never draws the fat pill
         }
-        const bool active=hovered||dragging||hasFocus();
-        if(active){
-            QRadialGradient aura(handle,16+life*4);
-            aura.setColorAt(0,QColor(255,255,255,dragging?130:70));
-            aura.setColorAt(1,QColor(255,255,255,0));
-            p.setBrush(aura);p.drawEllipse(handle,19+life*4,19+life*4);
-            p.setPen(QPen(QColor(255,255,255,130),3+life*2));
-            p.setBrush(Qt::NoBrush);p.drawEllipse(handle,9+life*2,9+life*2);
+
+        // 2. HORIZONTAL "FAT PILL" CARD LOGIC
+        const qreal first = 1.0, last = width() - 1.0;
+        const qreal center = height() / 2.0;
+        const qreal fraction = maximum() == minimum() ? 0.0 : qreal(value() - minimum()) / qreal(maximum() - minimum());
+        const qreal position = first + (last - first) * (option.upsideDown ? 1.0 - fraction : fraction);
+        const qreal life = (std::sin(phase * 6.28318530718) + 1.0) * 0.5;
+        const QRectF track = QRectF(rect()).adjusted(1, 1, -1, -1);
+        if (track.isEmpty()) return;
+        
+        const qreal radius = qMin(track.width(), track.height()) / 2.0;
+        QPainterPath pill;
+        pill.addRoundedRect(track, radius, radius);
+        
+        const qreal length = (last - first) * fraction;
+        const QRectF fill = QRectF(option.upsideDown ? position : first, track.top(), length, track.height());
+        QPainterPath fillRectangle;
+        fillRectangle.addRect(fill);
+        const QPainterPath fillPath = pill.intersected(fillRectangle);
+        
+        // Draw Pill Background
+        p.setPen(Qt::NoPen);
+        p.fillPath(pill, QColor("#171a1d"));
+        
+        // Draw Colored Fill
+        QLinearGradient gradient(track.topLeft(), track.topRight());
+        gradient.setColorAt(0, QColor("#57dd7b"));
+        gradient.setColorAt(qBound(0.12, 0.46 + life * 0.26, 0.86), QColor("#3ddcff"));
+        gradient.setColorAt(1, QColor("#3d91fb"));
+        p.fillPath(fillPath, gradient);
+        
+        // Draw Fluid Glow
+        const QPointF handle(position, center);
+        const qreal glowPosition = first + (position - first) * phase;
+        const QPointF flowing(glowPosition, center);
+        QRadialGradient fluid(flowing, 32);
+        fluid.setColorAt(0, QColor("#e5fff4"));
+        fluid.setColorAt(.20, QColor(61, 220, 255, 140));
+        fluid.setColorAt(.62, QColor(61, 220, 255, 40));
+        fluid.setColorAt(1, QColor(61, 220, 255, 0));
+        p.save(); p.setClipPath(fillPath); p.setBrush(fluid); p.drawEllipse(flowing, 32, 11); p.restore();
+        
+        // Draw Edge Resistance Physics
+        p.save(); p.setClipPath(pill);
+        if (edgeTension > 0) {
+            QRadialGradient warning(handle, 28);
+            warning.setColorAt(0, QColor(255, 50, 50, qRound(150 * edgeTension)));
+            warning.setColorAt(1, QColor(255, 50, 50, 0));
+            p.setBrush(warning); p.drawEllipse(handle, 28, 28);
+        }
+        
+        // Draw Active Aura
+        const bool active = hovered || dragging || hasFocus();
+        if (active) {
+            QRadialGradient aura(handle, 16 + life * 4);
+            aura.setColorAt(0, QColor(255, 255, 255, dragging ? 130 : 70));
+            aura.setColorAt(1, QColor(255, 255, 255, 0));
+            p.setBrush(aura); p.drawEllipse(handle, 19 + life * 4, 19 + life * 4);
+            p.setPen(QPen(QColor(255, 255, 255, 130), 3 + life * 2));
+            p.setBrush(Qt::NoBrush); p.drawEllipse(handle, 9 + life * 2, 9 + life * 2);
         }
         p.restore();
-        // Vertical controls remain purely graphical; their handle stays inside the pill.
-        if(!horizontal){
-            const qreal handleRadius=qMin(7.0,radius-1.0);
-            const QPointF safeHandle(center,qBound(track.top()+handleRadius+1,position,track.bottom()-handleRadius-1));
-            p.setPen(QPen(active?Qt::white:QColor("#77b4ff"),1));
-            p.setBrush(QColor("#3d91fb"));p.drawEllipse(safeHandle,handleRadius,handleRadius);
-            return;
-        }
-        QFont valueFont=font();valueFont.setBold(true);valueFont.setPixelSize(12);p.setFont(valueFont);
-        const QString text=QString::number(value());
-        const qreal textWidth=p.fontMetrics().horizontalAdvance(text)+8;
-        const QRectF valueRect(qMax(16.0,width()-24.0-textWidth),track.top(),textWidth,track.height());
-        const qreal titleLeft=m_icon.isNull()?16.0:46.0;
-        const QRectF titleRect(titleLeft,track.top(),qMax(0.0,valueRect.left()-titleLeft-12),track.height());
-        const QString title=p.fontMetrics().elidedText(m_title,Qt::ElideRight,qRound(titleRect.width()));
-        const auto drawContent=[&](const QPainterPath &clip,const QColor &color){
-            p.save();p.setClipPath(clip);
-            const qreal emphasis=qMax(1.0,property("canvasScale").toReal());
-            p.translate(track.center());p.scale(emphasis,emphasis);p.translate(-track.center());
+        
+        // Draw Text and Icon Natively
+        QFont valueFont = font(); valueFont.setBold(true); valueFont.setPixelSize(12); p.setFont(valueFont);
+        const QString text = QString::number(value());
+        const qreal textWidth = p.fontMetrics().horizontalAdvance(text) + 8;
+        const QRectF valueRect(qMax(16.0, width() - 24.0 - textWidth), track.top(), textWidth, track.height());
+        const qreal titleLeft = m_icon.isNull() ? 16.0 : 46.0;
+        const QRectF titleRect(titleLeft, track.top(), qMax(0.0, valueRect.left() - titleLeft - 12), track.height());
+        const QString title = p.fontMetrics().elidedText(m_title, Qt::ElideRight, qRound(titleRect.width()));
+        
+        auto drawContent = [&](const QPainterPath &clip, const QColor &color) {
+            p.save(); p.setClipPath(clip);
+            const qreal emphasis = qMax(1.0, property("canvasScale").toReal());
+            p.translate(track.center()); p.scale(emphasis, emphasis); p.translate(-track.center());
             p.setPen(color);
-            if(!m_icon.isNull()){
-                QPixmap icon=m_icon.pixmap(QSize(20,20),devicePixelRatioF(),isEnabled()?QIcon::Normal:QIcon::Disabled);
-                QPainter tint(&icon);tint.setCompositionMode(QPainter::CompositionMode_SourceIn);tint.fillRect(icon.rect(),color);tint.end();
-                p.drawPixmap(QRectF(16,center-10,20,20),icon,QRectF(icon.rect()));
+            if (!m_icon.isNull()) {
+                QPixmap icon = m_icon.pixmap(QSize(20, 20), devicePixelRatioF(), isEnabled() ? QIcon::Normal : QIcon::Disabled);
+                QPainter tint(&icon); tint.setCompositionMode(QPainter::CompositionMode_SourceIn); tint.fillRect(icon.rect(), color); tint.end();
+                p.drawPixmap(QRectF(16, center - 10, 20, 20), icon, QRectF(icon.rect()));
             }
-            p.drawText(titleRect,Qt::AlignLeft|Qt::AlignVCenter,title);
-            p.drawText(valueRect,Qt::AlignRight|Qt::AlignVCenter,text);
+            p.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, title);
+            p.drawText(valueRect, Qt::AlignRight | Qt::AlignVCenter, text);
             p.restore();
         };
-        drawContent(pill.subtracted(fillPath),Qt::white);
-        drawContent(fillPath,QColor("#101418"));
+        
+        // Text Color Inversion
+        drawContent(pill.subtracted(fillPath), Qt::white);
+        drawContent(fillPath, QColor("#101418"));
     }
 
 private:
     int valueAt(const QPointF &point) const {
         const bool horizontal=orientation()==Qt::Horizontal;
-        const qreal extent=qMax<qreal>(1,(horizontal?width():height())-2.0);
-        qreal fraction=((horizontal?point.x():point.y())-1.0)/extent;
+        const qreal inset=horizontal?1.0:8.0;
+        const qreal extent=qMax<qreal>(1,(horizontal?width():height())-2.0*inset);
+        qreal fraction=((horizontal?point.x():point.y())-inset)/extent;
         QStyleOptionSlider option;initStyleOption(&option);
         if(option.upsideDown)fraction=1.0-fraction;
         return minimum()+qRound(fraction*(maximum()-minimum()));

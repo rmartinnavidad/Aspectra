@@ -74,45 +74,20 @@ bool VideoProcessor::isVideo(const QString &p) {
 QImage ImageProcessor::compositeTimeline(const QImage &source,const QVector<TimelineTrack> &tracks,double time){
     if(source.isNull()||tracks.isEmpty())return source;
     QImage out=source.convertToFormat(QImage::Format_ARGB32);
-    QPainter painter(&out);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform);
     for(const auto &track:tracks){
         if(!track.enabled||time<track.start||time>track.end)continue;
-        QPointF position=track.position,scale=track.scale;
-        double opacity=track.opacity,rotation=track.rotation;
-        if(!track.keyframes.isEmpty()){
-            const TimelineKeyframe *before=&track.keyframes.first(),*after=&track.keyframes.last();
-            for(const auto &key:track.keyframes){if(key.time<=time)before=&key;if(key.time>=time){after=&key;break;}}
-            const double blend=after->time>before->time?std::clamp((time-before->time)/(after->time-before->time),0.,1.):0.;
-            position=before->position*(1-blend)+after->position*blend;
-            scale=before->scale*(1-blend)+after->scale*blend;
-            rotation=before->rotation*(1-blend)+after->rotation*blend;
-            opacity=before->opacity*(1-blend)+after->opacity*blend;
-        }
-        opacity*=track.fill;
-        if(track.transitionIn>0)opacity*=std::clamp((time-track.start)/track.transitionIn,0.,1.);
-        if(track.transitionOut>0)opacity*=std::clamp((track.end-time)/track.transitionOut,0.,1.);
-        painter.save();
-        if(track.blendMode=="Screen")painter.setCompositionMode(QPainter::CompositionMode_Screen);
-        else if(track.blendMode=="Multiply")painter.setCompositionMode(QPainter::CompositionMode_Multiply);
-        else if(track.blendMode=="Overlay")painter.setCompositionMode(QPainter::CompositionMode_Overlay);
-        else if(track.blendMode=="Color Dodge")painter.setCompositionMode(QPainter::CompositionMode_ColorDodge);
-        else if(track.blendMode=="Lighten")painter.setCompositionMode(QPainter::CompositionMode_Lighten);
-        painter.setOpacity(std::clamp(opacity,0.,1.));
-        painter.translate(position);painter.rotate(rotation);painter.scale(std::max(.01,scale.x()),std::max(.01,scale.y()));
-        if(track.type==TimelineTrack::Text){
-            QFont font(track.fontFamily);font.setStyleName(track.fontStyle);font.setPixelSize(track.fontSize);font.setBold(track.fontBold);font.setItalic(track.fontItalic);font.setUnderline(track.underline);font.setStretch(qBound(1,qRound(track.horizontalScale),400));font.setCapitalization(track.allCaps?QFont::AllUppercase:(track.smallCaps?QFont::SmallCaps:QFont::MixedCase));font.setLetterSpacing(QFont::AbsoluteSpacing,track.letterSpacing+track.kerning);
-            painter.setFont(font);const QStringList lines=track.text.split('\n');const QFontMetricsF metrics(font);const double lineAdvance=metrics.height()*track.lineSpacing/100.;const double baseline=track.baseline+(track.superscript?-track.fontSize*.32:(track.subscript?track.fontSize*.22:0));
-            painter.save();painter.scale(1.,qBound(.1,track.verticalScale/100.,4.));
-            for(int line=0;line<lines.size();++line){const QPointF point(0,baseline+line*lineAdvance);const QString value=lines[line];if(track.highlightColor.alpha()>0&&track.highlightWidth>0){const double h=qMax(1.,metrics.height()*track.highlightWidth/100.);painter.fillRect(QRectF(point.x(),point.y()-metrics.ascent(),metrics.horizontalAdvance(value),h),track.highlightColor);}if(track.textStroke){QPainterPath path;path.addText(point,font,value);painter.fillPath(path,track.color);painter.strokePath(path,QPen(track.color.lighter(170),qMax(1.,track.fontSize/26.)));}else{painter.setPen(track.color);painter.drawText(point,value);}}
-            painter.restore();
-        }
-        else if(!track.image.isNull())painter.drawImage(QPointF(0,0),track.image);
-        painter.restore();
+        QPointF position=track.position,scale=track.scale;double opacity=track.opacity,rotation=track.rotation;
+        if(!track.keyframes.isEmpty()){const TimelineKeyframe *before=&track.keyframes.first(),*after=&track.keyframes.last();for(const auto &key:track.keyframes){if(key.time<=time)before=&key;if(key.time>=time){after=&key;break;}}const double blend=after->time>before->time?std::clamp((time-before->time)/(after->time-before->time),0.,1.):0.;position=before->position*(1-blend)+after->position*blend;scale=before->scale*(1-blend)+after->scale*blend;rotation=before->rotation*(1-blend)+after->rotation*blend;opacity=before->opacity*(1-blend)+after->opacity*blend;}
+        opacity*=track.fill;if(track.transitionIn>0)opacity*=std::clamp((time-track.start)/track.transitionIn,0.,1.);if(track.transitionOut>0)opacity*=std::clamp((track.end-time)/track.transitionOut,0.,1.);
+        QImage layer(out.size(),QImage::Format_ARGB32);layer.fill(Qt::transparent);QPainter lp(&layer);lp.setRenderHint(QPainter::Antialiasing);lp.setRenderHint(QPainter::SmoothPixmapTransform);lp.translate(position);lp.rotate(rotation);lp.scale(std::max(.01,scale.x()),std::max(.01,scale.y()));
+        if(track.type==TimelineTrack::Text){QFont font(track.fontFamily);font.setStyleName(track.fontStyle);font.setPixelSize(track.fontSize);font.setBold(track.fontBold);font.setItalic(track.fontItalic);font.setUnderline(track.underline);font.setStretch(qBound(1,qRound(track.horizontalScale),400));font.setCapitalization(track.allCaps?QFont::AllUppercase:(track.smallCaps?QFont::SmallCaps:QFont::MixedCase));font.setLetterSpacing(QFont::AbsoluteSpacing,track.letterSpacing+track.kerning);lp.setFont(font);const QStringList lines=track.text.split('\n');const QFontMetricsF metrics(font);const double lineAdvance=metrics.height()*track.lineSpacing/100.;const double baseline=track.baseline+(track.superscript?-track.fontSize*.32:(track.subscript?track.fontSize*.22:0));lp.save();lp.scale(1.,qBound(.1,track.verticalScale/100.,4.));for(int lineIndex=0;lineIndex<lines.size();++lineIndex){const QPointF point(0,baseline+lineIndex*lineAdvance);const QString value=lines[lineIndex];if(track.highlightColor.alpha()>0&&track.highlightWidth>0){const double h=qMax(1.,metrics.height()*track.highlightWidth/100.);lp.fillRect(QRectF(point.x(),point.y()-metrics.ascent(),metrics.horizontalAdvance(value),h),track.highlightColor);}if(track.textStroke){QPainterPath path;path.addText(point,font,value);lp.fillPath(path,track.color);lp.strokePath(path,QPen(track.color.lighter(170),qMax(1.,track.fontSize/26.)));}else{lp.setPen(track.color);lp.drawText(point,value);}}lp.restore();}
+        else if(!track.image.isNull())lp.drawImage(QPointF(0,0),track.image);lp.end();
+        if(track.style.hasStyles())layer=applyLayerEffects(layer,track.style);
+        QPainter painter(&out);if(track.blendMode=="Screen")painter.setCompositionMode(QPainter::CompositionMode_Screen);else if(track.blendMode=="Multiply")painter.setCompositionMode(QPainter::CompositionMode_Multiply);else if(track.blendMode=="Overlay")painter.setCompositionMode(QPainter::CompositionMode_Overlay);else if(track.blendMode=="Color Dodge")painter.setCompositionMode(QPainter::CompositionMode_ColorDodge);else if(track.blendMode=="Lighten")painter.setCompositionMode(QPainter::CompositionMode_Lighten);painter.setOpacity(std::clamp(opacity,0.,1.));painter.drawImage(QPoint(),layer);
     }
     return out;
 }
+
 QString VideoProcessor::findFfmpeg() {
     QString path=QSettings().value("ffmpeg").toString();
     if (QFileInfo::exists(path)) return path;

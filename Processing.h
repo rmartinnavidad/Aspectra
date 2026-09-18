@@ -55,6 +55,7 @@ struct TimelineTrack {
     bool fontBold=true,fontItalic=false,allCaps=false,smallCaps=false,superscript=false,subscript=false,underline=false,textStroke=false;
     bool standardLigature=true,contextualAlternates=true,discretionaryLigature=false,swash=false,stylisticAlternates=false,tiltingAlternates=false,ordinals=false,fractions=false;
     bool enabled=true,locked=false,muted=false,lockPixels=false,lockPosition=false,isGroup=false,smartObject=false;
+    Adjustments style;
     QByteArray smartSourceJson;
     QVector<TimelineKeyframe> keyframes;
 };

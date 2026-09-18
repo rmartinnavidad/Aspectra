@@ -283,7 +283,7 @@ QPushButton *button(const QString &text,QLayout *layout=nullptr,const QString &c
 QIcon whiteIcon(const QString &path){QImage source(path);if(source.isNull())return {};source=source.convertToFormat(QImage::Format_ARGB32);for(int y=0;y<source.height();++y){QRgb *line=reinterpret_cast<QRgb*>(source.scanLine(y));for(int x=0;x<source.width();++x)line[x]=qRgba(255,255,255,qAlpha(line[x]));}return QIcon(QPixmap::fromImage(source));}
 QIcon settingIcon(const QString &name){
     const QString key=name.toLower();const QString root="C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/";QString file;
-    if(key=="frame")file="frame tool.png"; else if(key=="canvas")file="icon_canvas.png"; else if(key=="safe")file="icon_safe zone.png"; else if(key=="layer")file="shape layer.png"; else if(key=="mask")file="horizontial mask type tool.png";
+    if(key=="frame")file="frame tool.png"; else if(key=="canvas")file="icon_canvas.png"; else if(key=="safe")file="icon_safe zone.png"; else if(key=="layer")file="layer stream.png"; else if(key=="mask")file="horizontial mask type tool.png";
     else if(key=="hue")file="icon_color_.png"; else if(key=="saturation")file="editor_saturation.png"; else if(key=="brightness")file="editor_brightness_100.png"; else if(key=="contrast")file="editor_contrast.png"; else if(key=="levels")file="editor_levels.png"; else if(key=="balance")file="editor_light balance_full_.png"; else if(key=="key")file="icon_color keying.png"; else if(key=="auto")file="editor_auto.png";
     else if(key=="subject")file="object selection.png"; else if(key=="brush")file="selection brush.png"; else if(key=="contract")file="rectangle marquee tool.png"; else if(key=="feather")file="editor_feather.png"; else if(key=="edge")file="sharpen tool.png"; else if(key=="hair")file="selection brush.png";
     else if(key=="colors")file="gradient tool.png"; else if(key=="detail")file="add anchor point tool.png"; else if(key=="smooth")file="editor_smooth.png"; else if(key=="export")file="trim_save frame.png";
@@ -865,10 +865,11 @@ void MainWindow::buildUi(){
                                 auto *layerItem=new QListWidgetItem;layerItem->setData(Qt::UserRole,path);layerItem->setData(Qt::UserRole+2,i);layerItem->setData(Qt::UserRole+3,"layer");layerItem->setSizeHint(QSize(selected?116:92,selected?64:56));railWidget->addItem(layerItem);
                                 auto *layerCard=new QWidget(railWidget);layerCard->setAttribute(Qt::WA_TransparentForMouseEvents);layerCard->setStyleSheet(QString("QWidget{background:%1;border:1px solid %2;border-radius:8px;}").arg(selected?"#171022":"#0b0b0f",selected?"#7a4dff":"#292331"));auto *layerRow=new QHBoxLayout(layerCard);layerRow->setContentsMargins(0,3,6,3);layerRow->setSpacing(4);
                                 auto *spine=new QLabel(last?QString::fromUtf8("━●"):QString::fromUtf8("━━"),layerCard);spine->setFixedWidth(last?20:18);spine->setAlignment(Qt::AlignCenter);spine->setStyleSheet("color:#58636e;background:transparent;border:0;font-size:10px;");
+                                auto *visibility=new QLabel(layerCard);visibility->setPixmap(whiteIcon(QString("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/")+ (track.enabled?"layer_show.png":"layer_hidden.png")).pixmap(13,13));visibility->setFixedSize(14,14);visibility->setAlignment(Qt::AlignCenter);visibility->setToolTip(track.enabled?"Layer visible":"Layer hidden");visibility->setStyleSheet("background:transparent;border:0;");
                                 QImage layerImage=track.image;if(layerImage.isNull()&&track.type==TimelineTrack::Text){layerImage=QImage(36,36,QImage::Format_ARGB32);layerImage.fill(QColor("#121218"));QPainter tp(&layerImage);tp.setPen(track.color);QFont tf(track.fontFamily);tf.setBold(track.fontBold);tf.setPixelSize(18);tp.setFont(tf);tp.drawText(layerImage.rect(),Qt::AlignCenter,"Aa");}
-                                auto *layerThumb=new QLabel(layerCard);layerThumb->setPixmap(thumbnailIcon(layerImage,selected?42:36).pixmap(selected?42:36,selected?42:36));layerThumb->setFixedSize(selected?42:36,selected?42:36);layerThumb->setAlignment(Qt::AlignCenter);layerThumb->setStyleSheet(QString("background:#11151a;border:2px solid %1;border-radius:5px;").arg(selected?"#7a4dff":"#34303d"));
+                                auto *layerThumb=new QLabel(layerCard);if(!layerImage.isNull())layerThumb->setPixmap(thumbnailIcon(layerImage,selected?42:36).pixmap(selected?42:36,selected?42:36));else{const QString typeIcon=track.isGroup?"layers.png":(track.type==TimelineTrack::Effect?"add effects.png":(track.type==TimelineTrack::Text?"horizontal type tool.png":"add layer.png"));layerThumb->setPixmap(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/"+typeIcon).pixmap(selected?28:24,selected?28:24));}layerThumb->setFixedSize(selected?42:36,selected?42:36);layerThumb->setAlignment(Qt::AlignCenter);layerThumb->setStyleSheet(QString("background:#11151a;border:2px solid %1;border-radius:5px;").arg(selected?"#7a4dff":"#34303d"));
                                 auto *layerText=new QWidget(layerCard);layerText->setStyleSheet("background:transparent;border:0;");auto *textCol=new QVBoxLayout(layerText);textCol->setContentsMargins(0,0,0,0);textCol->setSpacing(0);auto *layerName=new QLabel(tName,layerText);layerName->setMaximumWidth(selected?48:34);layerName->setStyleSheet("color:#f2eff8;font-size:9px;font-weight:700;background:transparent;border:0;");layerName->setToolTip(tName);auto *kindLabel=new QLabel(track.isGroup?"GROUP":(track.type==TimelineTrack::Text?"TYPE":"LAYER"),layerText);kindLabel->setStyleSheet(QString("color:%1;font-size:7px;font-weight:700;background:transparent;border:0;").arg(selected?"#a98cff":"#706a7a"));textCol->addWidget(layerName);textCol->addWidget(kindLabel);
-                                layerRow->addWidget(spine);layerRow->addWidget(layerThumb);if(selected)layerRow->addWidget(layerText,1);railWidget->setItemWidget(layerItem,layerCard);
+                                layerRow->addWidget(spine);layerRow->addWidget(visibility);layerRow->addWidget(layerThumb);if(selected)layerRow->addWidget(layerText,1);railWidget->setItemWidget(layerItem,layerCard);
                                 if(animateStreamArtboards->contains(path)){auto *fade=new QGraphicsOpacityEffect(layerCard);layerCard->setGraphicsEffect(fade);fade->setOpacity(0.0);auto *anim=new QPropertyAnimation(fade,"opacity",layerCard);anim->setDuration(170);anim->setStartValue(0.0);anim->setEndValue(1.0);anim->setEasingCurve(QEasingCurve::OutCubic);QTimer::singleShot(qMin(streamPosition*22,110),layerCard,[anim]{anim->start(QAbstractAnimation::DeleteWhenStopped);});}++streamPosition;
                             }}
                         }
@@ -887,12 +888,9 @@ void MainWindow::buildUi(){
                         rowLayout->setContentsMargins(4, 2, 4, 2);
                         rowLayout->setSpacing(8);
 
-                        auto *eyeBtn = new QToolButton; eyeBtn->setCheckable(true); eyeBtn->setChecked(isVisible); eyeBtn->setText(isVisible ? "👁" : "○");
-                        eyeBtn->setFixedSize(22, 22); eyeBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #3ddcff; font-size: 13px; } QToolButton:checked { color: #3ddcff; } QToolButton:not(:checked) { color: #555562; }");
-                        QObject::connect(eyeBtn, &QToolButton::toggled, [eyeBtn, onToggleVisibility](bool checked) {
-                            eyeBtn->setText(checked ? "👁" : "○");
-                            if (onToggleVisibility) onToggleVisibility(checked);
-                        });
+                        auto *eyeBtn = new QToolButton;eyeBtn->setCheckable(true);eyeBtn->setChecked(isVisible);eyeBtn->setIcon(whiteIcon(QString("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/")+(isVisible?"layer_show.png":"layer_hidden.png")));eyeBtn->setIconSize(QSize(16,16));
+                        eyeBtn->setFixedSize(22,22);eyeBtn->setToolTip(isVisible?"Hide layer":"Show layer");eyeBtn->setStyleSheet("QToolButton { background: transparent; border: none; } QToolButton:hover { background:#15151b; border-radius:5px; }");
+                        QObject::connect(eyeBtn,&QToolButton::toggled,[eyeBtn,onToggleVisibility](bool checked){eyeBtn->setIcon(whiteIcon(QString("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/")+(checked?"layer_show.png":"layer_hidden.png")));eyeBtn->setToolTip(checked?"Hide layer":"Show layer");if(onToggleVisibility)onToggleVisibility(checked);});
                         rowLayout->addWidget(eyeBtn);
 
                         auto *imageButton = new QToolButton(rowItemWidget);
@@ -1054,7 +1052,7 @@ void MainWindow::buildUi(){
                     menu.addSeparator();
                     auto *properties=menu.addAction("Artboard Properties…");
                     auto *selectLayers=menu.addAction("Select Layers in Artboard");
-                    auto *visible=menu.addAction(contextLayer.visible?"Hide Artboard":"Show Artboard");
+                    auto *visible=menu.addAction(whiteIcon(QString("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/")+(contextLayer.visible?"layer_show.png":"layer_hidden.png")),contextLayer.visible?"Hide Artboard":"Show Artboard");
                     auto *lockPosition=menu.addAction("Lock Artboard Position");lockPosition->setCheckable(true);lockPosition->setChecked(contextLayer.lockPosition);
                     menu.addSeparator();
                     const bool hasMask=!contextLayer.mask.isNull();
@@ -1214,7 +1212,7 @@ void MainWindow::buildUi(){
 
                 auto *maskBtn = new QToolButton; maskBtn->setIcon(settingIcon("mask")); maskBtn->setToolTip("Add Layer Mask");
                 auto *adjBtn = new QToolButton; adjBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/editor_adjustments.png")); adjBtn->setToolTip("New Adjustment");
-                auto *grpBtn = new QToolButton; grpBtn->setIcon(settingIcon("archive")); grpBtn->setToolTip("New Folder/Group");
+                auto *grpBtn = new QToolButton;grpBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/layers.png"));grpBtn->setToolTip("New Folder/Group");
                 auto *newLayerBtn = new QToolButton; newLayerBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/add layer.png")); newLayerBtn->setToolTip("New Layer / Artboard");
                 auto *delBtn = new QToolButton; delBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/delete anchor point tool.png")); delBtn->setToolTip("Delete");
 
@@ -2066,7 +2064,7 @@ void MainWindow::updateTrackPanel(){
     if(!trackList)return;
     const int selected=qBound(0,trackList->currentRow(),qMax(0,timelineTracks.size()-1));
     QSignalBlocker block(trackList);trackList->clear();
-    for(const auto &track:timelineTracks){auto *item=new QListWidgetItem(QString("%1  %2  %3–%4 s").arg(track.enabled?"●":"○",track.name).arg(track.start,0,'f',2).arg(track.end,0,'f',2),trackList);item->setToolTip(track.type==TimelineTrack::Text?track.text:track.source);}
+    for(const auto &track:timelineTracks){auto *item=new QListWidgetItem(QString("%1  %2–%3 s").arg(track.name).arg(track.start,0,'f',2).arg(track.end,0,'f',2),trackList);item->setIcon(whiteIcon(QString("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/")+(track.enabled?"layer_show.png":"layer_hidden.png")));item->setToolTip(track.type==TimelineTrack::Text?track.text:track.source);}
     if(!timelineTracks.isEmpty())trackList->setCurrentRow(selected);
     if(selected>=0&&selected<timelineTracks.size()){
         const auto &track=timelineTracks[selected];

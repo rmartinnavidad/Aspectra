@@ -13,7 +13,7 @@
 #include "ModernUi.h"
 class AspectraGalleryScreen;
 struct LoadedMedia { QImage image;MediaInfo info;QString error;quint64 serial=0;QVector<int> gifTimes; };
-struct CanvasLayer { QString source,name,text,blendMode{"Normal"};QPointF position{0,0},artboardPosition{0,0},textPosition{20,52};QSize nativeSize;QColor textColor{Qt::white};int textSize=32;double opacity=1.,fill=1.;bool visible=true,textVisible=false,hasOverride=false,lockPixels=false,lockPosition=false,lockAll=false;Adjustments overrideAdjustments;QImage mask,selection,artboardImage;QPointF cloneSource;bool hasCloneSource=false; };
+struct AspectraSpace { QString id,name,activeArtboard;QPointF viewCenter;double viewZoom=1.; };\nstruct CanvasLayer { QString source,name,text,blendMode{"Normal"},spaceId;QPointF position{0,0},artboardPosition{0,0},textPosition{20,52};QSize nativeSize;QColor textColor{Qt::white};int textSize=32;double opacity=1.,fill=1.;bool visible=true,textVisible=false,hasOverride=false,lockPixels=false,lockPosition=false,lockAll=false;Adjustments overrideAdjustments;QImage mask,selection,artboardImage;QPointF cloneSource;bool hasCloneSource=false; };
 class MainWindow : public AspectraWindow {
     Q_OBJECT
     friend int runUiTests(MainWindow &);
@@ -36,7 +36,7 @@ protected:
     void resizeEvent(QResizeEvent *) override;
 private:
     BatchManager batch;QImage original;QString currentFile,lastFolder,recordFile;MediaInfo media;
-    QMap<QString,CanvasLayer> canvasLayers;QVector<TimelineTrack> timelineTracks;
+    QMap<QString,CanvasLayer> canvasLayers;QVector<TimelineTrack> timelineTracks;QVector<AspectraSpace> spaces;QString activeSpaceId;
     PreviewWidget *preview=nullptr;
     QPointer<QObject> blindSlider;
     QPointF blindDragOrigin;
@@ -47,7 +47,7 @@ private:
     QSpinBox *maskBrushSize=nullptr;
     QSlider *zoom=nullptr,*batchNavigator=nullptr;
     QCheckBox *lock=nullptr,*zip=nullptr,*rar=nullptr,*flat=nullptr,*guides=nullptr,*chromaKeyEnabled=nullptr,*perImageOverride=nullptr;QSlider *keyToleranceSlider=nullptr,*keySoftnessSlider=nullptr,*keyDespillSlider=nullptr,*keyLumaProtectSlider=nullptr,*keyMatteBiasSlider=nullptr,*keyCleanBlackSlider=nullptr,*keyCleanWhiteSlider=nullptr;
-    QComboBox *ratio=nullptr,*previewVariant=nullptr,*navigation=nullptr,*archiveMode=nullptr,*workerCount=nullptr,*trackBlend=nullptr,*trackTransition=nullptr;
+    QComboBox *ratio=nullptr,*previewVariant=nullptr,*navigation=nullptr,*archiveMode=nullptr,*workerCount=nullptr,*trackBlend=nullptr,*trackTransition=nullptr,*spaceSelector=nullptr;
     QDoubleSpinBox *inMarker=nullptr,*outMarker=nullptr;
     QListWidget *sizes=nullptr,*batchStrip=nullptr,*trackList=nullptr,*modelTextureList=nullptr;QTableWidget *clipTable=nullptr;QScrollArea *tabCarousel=nullptr;QWidget *bottomDock=nullptr,*carouselContent=nullptr,*carouselLeftFade=nullptr,*carouselRightFade=nullptr;QPointer<QPropertyAnimation> carouselBounce;
     QTabWidget *tabs=nullptr;
@@ -103,7 +103,7 @@ private:
     void rotateMedia(int);void changeMarginUnits(int);QMarginsF normalizedMargins(const QVector<QDoubleSpinBox*>&) const;
     void seekMedia(double);void deliverFrame(const QImage &);void fullScreenPlayer();
     void ingestCapture(QImage);void annotateMedia();void configureCapture();
-    void buildUi();void loadProject();void createNewProject(int,int,int,bool,const QString &,const QString &,const QColor &);void autosaveProject();void openProjectFile(const QString &);void restoreLayerOverride();
+    void buildUi();void loadProject();void ensureSpaces();QStringList spaceArtboards(const QString &spaceId={}) const;void setActiveSpace(const QString &id,bool selectArtboard=true);void rebuildSpaceSelector();void createNewProject(int,int,int,bool,const QString &,const QString &,const QColor &);void autosaveProject();void openProjectFile(const QString &);void restoreLayerOverride();
     QWidget *makeAdjustTab(const QStringList &,const QStringList &,const QVector<int>&,const QVector<int>&,const QVector<int>&);
     QWidget *framePanel();QWidget *colorPanel();QWidget *selectRefinePanel();QWidget *stylesPanel();QWidget *clipsPanel();QWidget *outputPanel();QWidget *texturePanel();QWidget *patternsPanel();QWidget *modelPanel();
     Adjustments adjustments() const;

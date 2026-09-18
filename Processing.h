@@ -44,7 +44,7 @@ struct TimelineTrack {
     enum Type { Video, Audio, Image, Text, Effect };
     Type type=Text;
     QString name,text,source,blendMode{"Normal"},transition{"Fade"},groupId,artboardSource;
-    QImage image;
+    QImage image,mask;
     QColor color{Qt::white};
     QPointF position{24,56},scale{1,1};
     double rotation=0,opacity=1,fill=1,start=0,end=0,transitionIn=0,transitionOut=0,volume=1;

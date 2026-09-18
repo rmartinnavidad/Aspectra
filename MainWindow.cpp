@@ -782,6 +782,8 @@ void MainWindow::buildUi(){
                 navRow->addWidget(crumbLabel, 1);
                 settingCardLayout->addLayout(navRow);
 
+                auto *spaceRow=new QHBoxLayout;spaceRow->setSpacing(5);auto *spaceGlyph=new QLabel("SPACE");spaceGlyph->setStyleSheet("color:#8d8d98;font-size:9px;font-weight:800;letter-spacing:1px;");spaceSelector=new QComboBox;spaceSelector->setFixedHeight(28);spaceSelector->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);spaceSelector->setStyleSheet("QComboBox{background:#09090d;border:1px solid #343440;border-radius:8px;color:#fff;padding-left:9px;font-size:11px;font-weight:700;} QComboBox:hover{border-color:#7a4dff;}");auto *spaceAdd=new QToolButton;spaceAdd->setText("+");spaceAdd->setFixedSize(28,28);auto *spaceMore=new QToolButton;spaceMore->setText("•••");spaceMore->setFixedSize(34,28);for(auto *button:{spaceAdd,spaceMore})button->setStyleSheet("QToolButton{background:#09090d;border:1px solid #343440;border-radius:8px;color:#fff;font-weight:800;} QToolButton:hover{border-color:#3ddcff;background:#111118;}");spaceRow->addWidget(spaceGlyph);spaceRow->addWidget(spaceSelector,1);spaceRow->addWidget(spaceAdd);spaceRow->addWidget(spaceMore);settingCardLayout->addLayout(spaceRow);ensureSpaces();rebuildSpaceSelector();
+
                 auto *stackWidget = new QStackedWidget;
                 settingCardLayout->addWidget(stackWidget, 1);
 
@@ -869,7 +871,7 @@ void MainWindow::buildUi(){
                 auto showArtboardWorkspace = [this]() {
                     QVector<PreviewArtboard> artboards;
                     qreal nextX = 0;
-                    for (const QString &path : this->batch.files) {
+                    for (const QString &path : spaceArtboards()) {
                         const CanvasLayer layer = canvasLayers.value(path);
                         const QSize size = layer.nativeSize.isValid() ? layer.nativeSize : QSize(widthInput->value(), heightInput->value());
                         PreviewArtboard board;
@@ -896,7 +898,7 @@ void MainWindow::buildUi(){
                 *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls, thumbnailIcon, expandedArtboards, selectedStreamTrack, animateStreamArtboards]() {
                     railWidget->clear();
                     if(this->batch.files.isEmpty()){auto *item=new QListWidgetItem("Blank Canvas");item->setData(Qt::UserRole,QString());railWidget->addItem(item);}else{
-                        for(const QString &path:this->batch.files){
+                        for(const QString &path:spaceArtboards()){
                             const auto &layer=canvasLayers[path];QString displayName=layer.name.isEmpty()?QFileInfo(path).completeBaseName():layer.name;if(displayName.isEmpty())displayName="Artboard";
                             QImage image=path==currentFile?original:layer.artboardImage;if(image.isNull()&&!path.startsWith(QLatin1String("aspectra://"))){QImageReader reader(path);reader.setScaledSize(QSize(64,64));image=reader.read();}
                             int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;const bool expanded=expandedArtboards->contains(path),active=path==currentFile;
@@ -923,6 +925,10 @@ void MainWindow::buildUi(){
                     }
                     animateStreamArtboards->clear();stackWidget->setCurrentIndex(0);backBtn->hide();crumbLabel->setText("Artboards");blendCombo->setCurrentText("Pass Through");syncLayerControls();showArtboardWorkspace();
                 };
+
+                QObject::connect(spaceSelector,QOverload<int>::of(&QComboBox::currentIndexChanged),settingCard,[this,populateRailPtr,showArtboardWorkspace](int index){if(index<0)return;const QString id=spaceSelector->itemData(index).toString();if(id.isEmpty()||id==activeSpaceId)return;setActiveSpace(id,true);if(populateRailPtr)(*populateRailPtr)();showArtboardWorkspace();});
+                QObject::connect(spaceAdd,&QToolButton::clicked,settingCard,[this,populateRailPtr,showArtboardWorkspace](){AspectraSpace space;space.id="space-"+QUuid::createUuid().toString(QUuid::Id128).left(12);space.name=QString("Space %1").arg(spaces.size()+1);spaces.append(space);activeSpaceId=space.id;rebuildSpaceSelector();if(populateRailPtr)(*populateRailPtr)();showArtboardWorkspace();autosaveProject();status->setText("New Space · "+space.name);});
+                QObject::connect(spaceMore,&QToolButton::clicked,settingCard,[this,spaceMore,populateRailPtr,showArtboardWorkspace](){QMenu menu;auto *rename=menu.addAction("Rename Space");auto *duplicate=menu.addAction("Duplicate Space");menu.addSeparator();auto *left=menu.addAction("Move Space Left");auto *right=menu.addAction("Move Space Right");auto *moveMenu=menu.addMenu("Move Current Artboard To");for(const auto &space:spaces)if(space.id!=activeSpaceId){auto *action=moveMenu->addAction(space.name);action->setData(space.id);}menu.addSeparator();auto *remove=menu.addAction("Delete Space");remove->setEnabled(spaces.size()>1);QAction *chosen=menu.exec(spaceMore->mapToGlobal(QPoint(0,spaceMore->height())));if(!chosen)return;auto indexOfSpace=[this](const QString &id){for(int i=0;i<spaces.size();++i)if(spaces[i].id==id)return i;return -1;};int index=indexOfSpace(activeSpaceId);if(chosen==rename&&index>=0){bool ok=false;const QString name=QInputDialog::getText(this,"Rename Space","Space name",QLineEdit::Normal,spaces[index].name,&ok).trimmed();if(ok&&!name.isEmpty())spaces[index].name=name;}else if(chosen==duplicate&&index>=0){const AspectraSpace sourceSpace=spaces[index];AspectraSpace copy;copy.id="space-"+QUuid::createUuid().toString(QUuid::Id128).left(12);copy.name=sourceSpace.name+" copy";spaces.insert(index+1,copy);const QStringList originals=spaceArtboards(sourceSpace.id);for(const QString &source:originals){const QString id="aspectra://artboard-"+QUuid::createUuid().toString(QUuid::Id128).left(8);CanvasLayer layer=canvasLayers.value(source);layer.source=id;layer.spaceId=copy.id;layer.name=layer.name+" copy";canvasLayers[id]=layer;int at=batch.files.indexOf(source)+1;batch.files.insert(qMax(0,at),id);QVector<TimelineTrack> clones;for(const auto &track:timelineTracks)if(track.artboardSource==source){TimelineTrack clone=track;clone.artboardSource=id;clones.append(clone);}timelineTracks+=clones;}activeSpaceId=copy.id;}else if(chosen==left&&index>0)spaces.swapItemsAt(index,index-1);else if(chosen==right&&index>=0&&index<spaces.size()-1)spaces.swapItemsAt(index,index+1);else if(chosen==remove&&spaces.size()>1&&index>=0){const QString fallback=spaces[index==0?1:0].id;for(auto it=canvasLayers.begin();it!=canvasLayers.end();++it)if(it->spaceId==activeSpaceId)it->spaceId=fallback;spaces.removeAt(index);activeSpaceId=fallback;}else if(chosen->parent()==moveMenu&&canvasLayers.contains(currentFile)){const QString target=chosen->data().toString();if(!target.isEmpty()){canvasLayers[currentFile].spaceId=target;const QString moved=currentFile;const QStringList remaining=spaceArtboards();if(!remaining.isEmpty())selectFile(remaining.first());else preview->clearArtboards();status->setText("Artboard moved to "+chosen->text());Q_UNUSED(moved);}}rebuildSpaceSelector();if(populateRailPtr)(*populateRailPtr)();showArtboardWorkspace();updateBatchLabel();autosaveProject();});
 
                 *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, syncLayerControls, thumbnailIcon](const QString &sourcePath) {
                     if (sourcePath.isEmpty()) return;

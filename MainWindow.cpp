@@ -744,11 +744,13 @@ void MainWindow::buildUi(){
                 railWidget->setWrapping(false);
                 railWidget->setResizeMode(QListView::Adjust);
                 railWidget->setMovement(QListView::Snap);
-                railWidget->setGridSize(QSize(248, 72));
+                railWidget->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+                QScroller::grabGesture(railWidget->viewport(),QScroller::TouchGesture);
+                railWidget->setGridSize(QSize());
                 railWidget->setIconSize(QSize(40, 40));
                 railWidget->setFixedHeight(96);
                 railWidget->setSpacing(8);
-                railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+                railWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 railWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 railWidget->setDragEnabled(true);
                 railWidget->setAcceptDrops(true);
@@ -756,13 +758,14 @@ void MainWindow::buildUi(){
                 railWidget->setDragDropMode(QAbstractItemView::InternalMove);
                 railWidget->setStyleSheet(
                     "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
-                    "QListWidget::item { width: 240px; height: 64px; background: #000000; border: 1px solid #2d2d35; border-radius: 8px; color: #ffffff; font-size: 10px; font-weight: 600; padding: 4px; }"
-                    "QListWidget::item:selected { border: 2px solid #7a4dff; background: #101015; }"
+                    "QListWidget::item { background: transparent; border: 0px; color: #ffffff; padding: 0px; }"
+                    "QListWidget::item:selected { background: transparent; border: 0px; }"
                 );
                 stackWidget->addWidget(railWidget);
 
                 // Page 1: Detailed Layer Rows
                 auto *detailRowList = new QListWidget;
+                detailRowList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);detailRowList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
                 detailRowList->setStyleSheet(
                     "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
                     "QListWidget::item { height: 38px; border-bottom: 1px solid #1c1c24; color: #ffffff; font-size: 11px; padding: 2px 6px; }"
@@ -800,6 +803,8 @@ void MainWindow::buildUi(){
                 auto populateRailPtr = std::make_shared<std::function<void()>>();
                 auto populateLayersPtr = std::make_shared<std::function<void(const QString&)>>();
                 auto expandedArtboards = std::make_shared<QSet<QString>>();
+                auto selectedStreamTrack = std::make_shared<int>(-1);
+                auto animateStreamArtboards = std::make_shared<QSet<QString>>();
                 auto thumbnailIcon = [](const QImage &image, int side) {
                     QPixmap tile(side, side);
                     tile.fill(QColor("#161a22"));
@@ -839,33 +844,36 @@ void MainWindow::buildUi(){
                     else preview->clearArtboards();
                 };
 
-                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls, thumbnailIcon, expandedArtboards]() {
+                *populateRailPtr = [this, railWidget, backBtn, crumbLabel, stackWidget, blendCombo, showArtboardWorkspace, syncLayerControls, thumbnailIcon, expandedArtboards, selectedStreamTrack, animateStreamArtboards]() {
                     railWidget->clear();
                     if (this->batch.files.isEmpty()) {
-                        auto *item = new QListWidgetItem("Blank Canvas");item->setData(Qt::UserRole,QString());railWidget->addItem(item);
+                        auto *item=new QListWidgetItem("Blank Canvas");item->setData(Qt::UserRole,QString());railWidget->addItem(item);
                     } else {
-                        for (const QString &path : this->batch.files) {
+                        for(const QString &path:this->batch.files){
                             const auto &layer=canvasLayers[path];QString displayName=layer.name.isEmpty()?QFileInfo(path).completeBaseName():layer.name;if(displayName.isEmpty())displayName="Artboard";
                             QImage image=path==currentFile?original:layer.artboardImage;if(image.isNull()&&!path.startsWith(QLatin1String("aspectra://"))){QImageReader reader(path);reader.setScaledSize(QSize(64,64));image=reader.read();}
-                            int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;const bool expanded=expandedArtboards->contains(path);
+                            int layerCount=0;for(const auto &track:timelineTracks)if(track.artboardSource==path)++layerCount;const bool expanded=expandedArtboards->contains(path),active=path==currentFile;
                             auto *item=new QListWidgetItem;item->setData(Qt::UserRole,path);item->setData(Qt::UserRole+1,layerCount);item->setData(Qt::UserRole+3,"artboard");item->setSizeHint(QSize(240,64));railWidget->addItem(item);
-                            auto *card=new QWidget(railWidget);card->setAttribute(Qt::WA_TransparentForMouseEvents);auto *cardRow=new QHBoxLayout(card);cardRow->setContentsMargins(6,4,8,4);cardRow->setSpacing(8);
-                            auto *toggle=new QLabel(expanded?QString::fromUtf8("◂"):QString::fromUtf8("▸"),card);toggle->setFixedSize(18,30);toggle->setAlignment(Qt::AlignCenter);toggle->setStyleSheet(QString("color:%1;background:transparent;font-size:15px;font-weight:700;").arg(expanded?"#3ddcff":"#8c99ad"));
-                            auto *thumb=new QLabel(card);thumb->setPixmap(thumbnailIcon(image,40).pixmap(40,40));thumb->setFixedSize(40,40);thumb->setAlignment(Qt::AlignCenter);
-                            auto *nameLabel=new QLabel(displayName,card);nameLabel->setStyleSheet("color:#ffffff;font-size:11px;font-weight:600;background:transparent;");nameLabel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
+                            auto *card=new QWidget(railWidget);card->setAttribute(Qt::WA_TransparentForMouseEvents);card->setStyleSheet(QString("QWidget{background:%1;border:2px solid %2;border-radius:9px;}").arg(active?"#0b1114":"#050506",active?"#3ddcff":"#2d2d35"));auto *cardRow=new QHBoxLayout(card);cardRow->setContentsMargins(6,4,8,4);cardRow->setSpacing(8);
+                            auto *toggle=new QLabel(expanded?QString::fromUtf8("◂"):QString::fromUtf8("▸"),card);toggle->setFixedSize(18,30);toggle->setAlignment(Qt::AlignCenter);toggle->setStyleSheet(QString("color:%1;background:transparent;border:0;font-size:15px;font-weight:700;").arg(expanded?"#3ddcff":"#8c99ad"));
+                            auto *thumb=new QLabel(card);thumb->setPixmap(thumbnailIcon(image,40).pixmap(40,40));thumb->setFixedSize(40,40);thumb->setAlignment(Qt::AlignCenter);thumb->setStyleSheet("background:#11151a;border:1px solid #303842;border-radius:5px;");
+                            auto *nameLabel=new QLabel(displayName,card);nameLabel->setStyleSheet("color:#ffffff;font-size:11px;font-weight:700;background:transparent;border:0;");nameLabel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
                             auto *layerWheel=new QLabel(QString::number(layerCount),card);layerWheel->setObjectName("SliderValue");layerWheel->setFixedSize(30,30);layerWheel->setAlignment(Qt::AlignCenter);layerWheel->setToolTip(QString("%1 layer%2 in this artboard").arg(layerCount).arg(layerCount==1?"":"s"));
                             cardRow->addWidget(toggle);cardRow->addWidget(thumb);cardRow->addWidget(nameLabel,1);cardRow->addWidget(layerWheel);railWidget->setItemWidget(item,card);
-                            if(path==currentFile){item->setSelected(true);railWidget->setCurrentItem(item);}
-                            if(expanded){for(int i=0;i<timelineTracks.size();++i){const auto &track=timelineTracks[i];if(track.artboardSource!=path)continue;QString tName=track.name.isEmpty()?QString("Layer %1").arg(i+1):track.name;
-                                auto *layerItem=new QListWidgetItem;layerItem->setData(Qt::UserRole,path);layerItem->setData(Qt::UserRole+2,i);layerItem->setData(Qt::UserRole+3,"layer");layerItem->setSizeHint(QSize(240,64));railWidget->addItem(layerItem);
-                                auto *layerCard=new QWidget(railWidget);layerCard->setAttribute(Qt::WA_TransparentForMouseEvents);auto *layerRow=new QHBoxLayout(layerCard);layerRow->setContentsMargins(8,4,8,4);layerRow->setSpacing(8);
-                                auto *layerThumb=new QLabel(layerCard);layerThumb->setPixmap(thumbnailIcon(track.image,40).pixmap(40,40));layerThumb->setFixedSize(40,40);layerThumb->setAlignment(Qt::AlignCenter);
-                                auto *layerName=new QLabel(tName,layerCard);layerName->setStyleSheet("color:#ffffff;font-size:10px;font-weight:600;background:transparent;");layerName->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
-                                auto *typeLabel=new QLabel(track.isGroup?"GROUP":"LAYER",layerCard);typeLabel->setStyleSheet("color:#3ddcff;font-size:8px;font-weight:700;background:transparent;");layerRow->addWidget(layerThumb);layerRow->addWidget(layerName,1);layerRow->addWidget(typeLabel);railWidget->setItemWidget(layerItem,layerCard);
+                            if(active){item->setSelected(true);railWidget->setCurrentItem(item);}
+                            if(expanded){int streamPosition=0;QVector<int> owned;for(int i=0;i<timelineTracks.size();++i)if(timelineTracks[i].artboardSource==path)owned.append(i);for(int ownedPos=0;ownedPos<owned.size();++ownedPos){const int i=owned[ownedPos];const auto &track=timelineTracks[i];const bool selected=*selectedStreamTrack==i,last=ownedPos==owned.size()-1;QString tName=track.name.isEmpty()?QString("Layer %1").arg(i+1):track.name;
+                                auto *layerItem=new QListWidgetItem;layerItem->setData(Qt::UserRole,path);layerItem->setData(Qt::UserRole+2,i);layerItem->setData(Qt::UserRole+3,"layer");layerItem->setSizeHint(QSize(selected?116:92,selected?64:56));railWidget->addItem(layerItem);
+                                auto *layerCard=new QWidget(railWidget);layerCard->setAttribute(Qt::WA_TransparentForMouseEvents);layerCard->setStyleSheet(QString("QWidget{background:%1;border:1px solid %2;border-radius:8px;}").arg(selected?"#171022":"#0b0b0f",selected?"#7a4dff":"#292331"));auto *layerRow=new QHBoxLayout(layerCard);layerRow->setContentsMargins(0,3,6,3);layerRow->setSpacing(4);
+                                auto *spine=new QLabel(last?QString::fromUtf8("━●"):QString::fromUtf8("━━"),layerCard);spine->setFixedWidth(last?20:18);spine->setAlignment(Qt::AlignCenter);spine->setStyleSheet("color:#58636e;background:transparent;border:0;font-size:10px;");
+                                QImage layerImage=track.image;if(layerImage.isNull()&&track.type==TimelineTrack::Text){layerImage=QImage(36,36,QImage::Format_ARGB32);layerImage.fill(QColor("#121218"));QPainter tp(&layerImage);tp.setPen(track.color);QFont tf(track.fontFamily);tf.setBold(track.fontBold);tf.setPixelSize(18);tp.setFont(tf);tp.drawText(layerImage.rect(),Qt::AlignCenter,"Aa");}
+                                auto *layerThumb=new QLabel(layerCard);layerThumb->setPixmap(thumbnailIcon(layerImage,selected?42:36).pixmap(selected?42:36,selected?42:36));layerThumb->setFixedSize(selected?42:36,selected?42:36);layerThumb->setAlignment(Qt::AlignCenter);layerThumb->setStyleSheet(QString("background:#11151a;border:2px solid %1;border-radius:5px;").arg(selected?"#7a4dff":"#34303d"));
+                                auto *layerText=new QWidget(layerCard);layerText->setStyleSheet("background:transparent;border:0;");auto *textCol=new QVBoxLayout(layerText);textCol->setContentsMargins(0,0,0,0);textCol->setSpacing(0);auto *layerName=new QLabel(tName,layerText);layerName->setMaximumWidth(selected?48:34);layerName->setStyleSheet("color:#f2eff8;font-size:9px;font-weight:700;background:transparent;border:0;");layerName->setToolTip(tName);auto *kindLabel=new QLabel(track.isGroup?"GROUP":(track.type==TimelineTrack::Text?"TYPE":"LAYER"),layerText);kindLabel->setStyleSheet(QString("color:%1;font-size:7px;font-weight:700;background:transparent;border:0;").arg(selected?"#a98cff":"#706a7a"));textCol->addWidget(layerName);textCol->addWidget(kindLabel);
+                                layerRow->addWidget(spine);layerRow->addWidget(layerThumb);if(selected)layerRow->addWidget(layerText,1);railWidget->setItemWidget(layerItem,layerCard);
+                                if(animateStreamArtboards->contains(path)){auto *fade=new QGraphicsOpacityEffect(layerCard);layerCard->setGraphicsEffect(fade);fade->setOpacity(0.0);auto *anim=new QPropertyAnimation(fade,"opacity",layerCard);anim->setDuration(170);anim->setStartValue(0.0);anim->setEndValue(1.0);anim->setEasingCurve(QEasingCurve::OutCubic);QTimer::singleShot(qMin(streamPosition*22,110),layerCard,[anim]{anim->start(QAbstractAnimation::DeleteWhenStopped);});}++streamPosition;
                             }}
                         }
                     }
-                    stackWidget->setCurrentIndex(0);backBtn->hide();crumbLabel->setText("Artboards");blendCombo->setCurrentText("Pass Through");syncLayerControls();showArtboardWorkspace();
+                    animateStreamArtboards->clear();stackWidget->setCurrentIndex(0);backBtn->hide();crumbLabel->setText("Artboards");blendCombo->setCurrentText("Pass Through");syncLayerControls();showArtboardWorkspace();
                 };
 
                 *populateLayersPtr = [this, detailRowList, backBtn, crumbLabel, stackWidget, blendCombo, syncLayerControls, thumbnailIcon](const QString &sourcePath) {
@@ -1172,23 +1180,21 @@ void MainWindow::buildUi(){
                 QObject::connect(railWidget, &QListWidget::itemDoubleClicked, [populateLayersPtr](QListWidgetItem *item) {
                     if(item&&populateLayersPtr&&item->data(Qt::UserRole+3).toString()=="artboard"){const QString path=item->data(Qt::UserRole).toString();if(!path.isEmpty())(*populateLayersPtr)(path);}
                 });
-                QObject::connect(railWidget, &QListWidget::itemClicked, this, [this, railWidget, expandedArtboards, populateRailPtr](QListWidgetItem *item) {
+                QObject::connect(railWidget, &QListWidget::itemClicked, this, [this, railWidget, expandedArtboards, selectedStreamTrack, animateStreamArtboards, populateRailPtr](QListWidgetItem *item) {
                     if(!item)return;const QString kind=item->data(Qt::UserRole+3).toString();const QString path=item->data(Qt::UserRole).toString();
-                    if(kind=="layer"){const int trackIndex=item->data(Qt::UserRole+2).toInt();if(trackIndex>=0&&trackIndex<timelineTracks.size()){if(path!=currentFile)selectFile(path);status->setText(QString("Layer selected · %1").arg(timelineTracks[trackIndex].name.isEmpty()?QString("Layer %1").arg(trackIndex+1):timelineTracks[trackIndex].name));}return;}
+                    if(kind=="layer"){const int trackIndex=item->data(Qt::UserRole+2).toInt();if(trackIndex>=0&&trackIndex<timelineTracks.size()){*selectedStreamTrack=trackIndex;if(path!=currentFile)selectFile(path);status->setText(QString("Layer selected · %1").arg(timelineTracks[trackIndex].name.isEmpty()?QString("Layer %1").arg(trackIndex+1):timelineTracks[trackIndex].name));if(populateRailPtr)(*populateRailPtr)();for(int i=0;i<railWidget->count();++i)if(railWidget->item(i)->data(Qt::UserRole+3).toString()=="layer"&&railWidget->item(i)->data(Qt::UserRole+2).toInt()==trackIndex){railWidget->setCurrentRow(i);railWidget->scrollToItem(railWidget->item(i),QAbstractItemView::EnsureVisible);break;}}return;}
                     if(kind!="artboard"||path.isEmpty())return;const QPoint clickPos=railWidget->viewport()->mapFromGlobal(QCursor::pos());const QRect itemRect=railWidget->visualItemRect(item);
-                    if(clickPos.x()>=itemRect.left()&&clickPos.x()<=itemRect.left()+34){if(expandedArtboards->contains(path))expandedArtboards->remove(path);else expandedArtboards->insert(path);if(populateRailPtr)(*populateRailPtr)();for(int i=0;i<railWidget->count();++i)if(railWidget->item(i)->data(Qt::UserRole+3).toString()=="artboard"&&railWidget->item(i)->data(Qt::UserRole).toString()==path){railWidget->scrollToItem(railWidget->item(i),QAbstractItemView::EnsureVisible);break;}return;}
-                    if(path!=currentFile)selectFile(path);
+                    if(clickPos.x()>=itemRect.left()&&clickPos.x()<=itemRect.left()+34){if(expandedArtboards->contains(path)){expandedArtboards->remove(path);animateStreamArtboards->remove(path);}else{expandedArtboards->insert(path);animateStreamArtboards->insert(path);}if(populateRailPtr)(*populateRailPtr)();for(int i=0;i<railWidget->count();++i)if(railWidget->item(i)->data(Qt::UserRole+3).toString()=="artboard"&&railWidget->item(i)->data(Qt::UserRole).toString()==path){railWidget->scrollToItem(railWidget->item(i),QAbstractItemView::EnsureVisible);break;}return;}
+                    *selectedStreamTrack=-1;if(path!=currentFile)selectFile(path);
                 });
                 QObject::connect(preview, &PreviewWidget::artboardSelected, railWidget, [this, railWidget](const QString &path) {
                     if (!this->batch.files.contains(path)) return;
                     selectFile(path);
                     for (int i = 0; i < railWidget->count(); ++i)
-                        if (railWidget->item(i)->data(Qt::UserRole).toString() == path) { railWidget->setCurrentRow(i); break; }
+                        if (railWidget->item(i)->data(Qt::UserRole+3).toString() == "artboard" && railWidget->item(i)->data(Qt::UserRole).toString() == path) { railWidget->setCurrentRow(i); break; }
                 });
                 QObject::connect(batchNavigator, &QSlider::valueChanged, railWidget, [this, railWidget](int index) {
-                    if (index < 0 || index >= railWidget->count()) return;
-                    railWidget->setCurrentRow(index);
-                    railWidget->scrollToItem(railWidget->item(index), QAbstractItemView::EnsureVisible);
+                    if(index<0||index>=this->batch.files.size())return;const QString path=this->batch.files[index];for(int i=0;i<railWidget->count();++i)if(railWidget->item(i)->data(Qt::UserRole+3).toString()=="artboard"&&railWidget->item(i)->data(Qt::UserRole).toString()==path){railWidget->setCurrentRow(i);railWidget->scrollToItem(railWidget->item(i),QAbstractItemView::EnsureVisible);break;}
                 });
 
                 QObject::connect(backBtn, &QToolButton::clicked, [populateRailPtr]() {
@@ -1765,7 +1771,7 @@ void MainWindow::showWelcomeScreen(){
         auto *root=new QVBoxLayout(&dialog);root->setContentsMargins(24,18,24,20);root->setSpacing(12);
         auto *hero=new QWidget(&dialog);auto *heroLayout=new QVBoxLayout(hero);heroLayout->setContentsMargins(0,0,0,4);heroLayout->setSpacing(0);auto *wordmark=new QLabel(hero);wordmark->setPixmap(QPixmap(":/brand/wordmark.png").scaled(240,48,Qt::KeepAspectRatio,Qt::SmoothTransformation));wordmark->setAlignment(Qt::AlignCenter);auto *script=label("SCRIPT · PROJECTS","section");script->setAlignment(Qt::AlignCenter);script->setStyleSheet("color:#ffffff;font-size:12px;font-weight:800;letter-spacing:4px;padding:2px;");heroLayout->addWidget(wordmark);heroLayout->addWidget(script);root->addWidget(hero);
         auto *tabLayout=new QHBoxLayout;tabLayout->setSpacing(7);auto *tabGroup=new QButtonGroup(&dialog);tabGroup->setExclusive(true);const QStringList tabs{"Recent","Saved","Photo","Print","Art","Web","Mobile","Film","3D Model"};for(int i=0;i<tabs.size();++i){auto *tab=new QPushButton(tabs[i],&dialog);tab->setCheckable(true);tab->setToolTip(tabs[i]);tabLayout->addWidget(tab);tabGroup->addButton(tab,i);}tabLayout->addStretch();tabGroup->button(0)->setChecked(true);root->addLayout(tabLayout);
-        auto *recentLabel=label("PROJECTS · 5 × 7","section");root->addWidget(recentLabel);auto *scroll=new QScrollArea(&dialog);scroll->setObjectName("ProjectGridRail");scroll->setWidgetResizable(false);scroll->setAlignment(Qt::AlignLeft|Qt::AlignTop);scroll->setFrameShape(QFrame::NoFrame);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *host=new QWidget(scroll);auto *grid=new QGridLayout(host);grid->setContentsMargins(4,4,4,4);grid->setHorizontalSpacing(5);grid->setVerticalSpacing(5);grid->setSizeConstraint(QLayout::SetFixedSize);scroll->setWidget(host);root->addWidget(scroll,1);
+        auto *recentLabel=label("PROJECTS · 5 × 7","section");root->addWidget(recentLabel);auto *scroll=new QScrollArea(&dialog);scroll->setObjectName("ProjectGridRail");scroll->setWidgetResizable(false);scroll->setAlignment(Qt::AlignLeft|Qt::AlignTop);scroll->setFrameShape(QFrame::NoFrame);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);auto *host=new QWidget(scroll);auto *grid=new QGridLayout(host);grid->setContentsMargins(4,4,4,4);grid->setHorizontalSpacing(5);grid->setVerticalSpacing(5);grid->setSizeConstraint(QLayout::SetFixedSize);scroll->setWidget(host);root->addWidget(scroll,1);
         auto *projectRail=new QHBoxLayout;auto *newProject=button("New Project",projectRail,"blue");auto *loadProjectButton=button("Load Project",projectRail);projectRail->addStretch();root->addLayout(projectRail);
         auto *settingsPanel=new QWidget(&dialog);settingsPanel->setMaximumHeight(0);settingsPanel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);auto *settings=new QGridLayout(settingsPanel);settings->setContentsMargins(14,14,14,14);settings->setHorizontalSpacing(14);settings->setVerticalSpacing(8);
         auto *back=button("‹ Back to projects");auto *create=button("Create Project",nullptr,"blue");auto *projectWidth=number(1920,16384),*projectHeight=number(1080,16384),*projectResolution=number(300,2400);auto *unit=new QComboBox;unit->addItems({"px","in","mm"});auto *orientation=new QComboBox;orientation->addItems({"Landscape","Portrait"});auto *artboard=new QCheckBox("Artboard");artboard->setChecked(true);auto *mode=new QComboBox;mode->addItems({"RGB","CMYK","Grayscale"});auto *bit=new QComboBox;bit->addItems({"8 bit","16 bit","32 bit"});auto *profile=new QComboBox;profile->addItems({"sRGB IEC61966-2.1","Display P3","Adobe RGB (1998)","CMYK Coated FOGRA39"});auto *background=button("Background: Transparent");background->setProperty("color",QColor(Qt::transparent));

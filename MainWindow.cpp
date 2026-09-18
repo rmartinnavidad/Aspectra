@@ -47,7 +47,7 @@ QIcon settingIcon(const QString &name);
 QString imageAsBase64(const QImage &image){if(image.isNull())return {};QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);image.save(&buffer,"PNG");return QString::fromLatin1(bytes.toBase64());}
 QImage imageFromBase64(const QJsonValue &value){return QImage::fromData(QByteArray::fromBase64(value.toString().toLatin1()),"PNG");}
 QJsonObject trackAsJson(const TimelineTrack &track){
-    QJsonObject item{{"type",int(track.type)},{"name",track.name},{"text",track.text},{"source",track.source},{"artboardSource",track.artboardSource},{"blendMode",track.blendMode},{"x",track.position.x()},{"y",track.position.y()},{"scaleX",track.scale.x()},{"scaleY",track.scale.y()},{"rotation",track.rotation},{"opacity",track.opacity},{"fill",track.fill},{"start",track.start},{"end",track.end},{"enabled",track.enabled},{"isGroup",track.isGroup}};
+    QJsonObject item{{"type",int(track.type)},{"name",track.name},{"text",track.text},{"source",track.source},{"artboardSource",track.artboardSource},{"blendMode",track.blendMode},{"x",track.position.x()},{"y",track.position.y()},{"scaleX",track.scale.x()},{"scaleY",track.scale.y()},{"rotation",track.rotation},{"opacity",track.opacity},{"fill",track.fill},{"start",track.start},{"end",track.end},{"enabled",track.enabled},{"isGroup",track.isGroup},{"smartObject",track.smartObject},{"smartSourceJson",QString::fromLatin1(track.smartSourceJson.toBase64())}};
     if(!track.image.isNull())item["imagePngBase64"]=imageAsBase64(track.image);
     return item;
 }
@@ -57,7 +57,7 @@ TimelineTrack trackFromJson(const QJsonObject &item){
     track.artboardSource=item.value("artboardSource").toString();track.blendMode=item.value("blendMode").toString("Normal");
     track.position={item.value("x").toDouble(),item.value("y").toDouble()};track.scale={item.value("scaleX").toDouble(1),item.value("scaleY").toDouble(1)};
     track.rotation=item.value("rotation").toDouble();track.opacity=item.value("opacity").toDouble(1);track.fill=item.value("fill").toDouble(1);
-    track.start=item.value("start").toDouble();track.end=item.value("end").toDouble();track.enabled=item.value("enabled").toBool(true);track.isGroup=item.value("isGroup").toBool(false);
+    track.start=item.value("start").toDouble();track.end=item.value("end").toDouble();track.enabled=item.value("enabled").toBool(true);track.isGroup=item.value("isGroup").toBool(false);track.smartObject=item.value("smartObject").toBool(false);track.smartSourceJson=QByteArray::fromBase64(item.value("smartSourceJson").toString().toLatin1());
     track.image=imageFromBase64(item.value("imagePngBase64"));return track;
 }
 class CanvasAspectPreview final : public QWidget {
@@ -765,7 +765,7 @@ void MainWindow::buildUi(){
 
                 // Page 1: Detailed Layer Rows
                 auto *detailRowList = new QListWidget;
-                detailRowList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);detailRowList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                detailRowList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);detailRowList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);detailRowList->setSelectionMode(QAbstractItemView::ExtendedSelection);
                 detailRowList->setStyleSheet(
                     "QListWidget { background: #000000; border: 1px solid #2d2d35; border-radius: 10px; outline: none; padding: 4px; }"
                     "QListWidget::item { height: 38px; border-bottom: 1px solid #1c1c24; color: #ffffff; font-size: 11px; padding: 2px 6px; }"
@@ -928,7 +928,7 @@ void MainWindow::buildUi(){
                         rowLayout->addStretch(1);
 
                         if (hasFx) { auto *fxLbl = new QLabel("fx"); fxLbl->setStyleSheet("color: #f39c12; font-size: 9px; font-weight: bold; background: #000000; border: 1px solid #4a3b1c; border-radius: 4px; padding: 2px 5px;"); rowLayout->addWidget(fxLbl); }
-                        if (isLinked) { auto *linkBtn = new QToolButton; linkBtn->setText("🔗"); linkBtn->setFixedSize(20, 20); linkBtn->setStyleSheet("QToolButton { background: transparent; border: none; color: #8c99ad; font-size: 10px; }"); rowLayout->addWidget(linkBtn); }
+                        if (isLinked) { auto *smartBadge=new QToolButton;smartBadge->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/smart object.png"));smartBadge->setIconSize(QSize(14,14));smartBadge->setFixedSize(20,20);smartBadge->setToolTip("Smart Object · embedded source layers preserved");smartBadge->setStyleSheet("QToolButton { background: transparent; border: none; }");rowLayout->addWidget(smartBadge); }
 
                         return rowItemWidget;
                     };
@@ -939,7 +939,7 @@ void MainWindow::buildUi(){
                     QString baseName = canvasLayers.contains(sourcePath) && !canvasLayers[sourcePath].name.isEmpty() ? canvasLayers[sourcePath].name : (sourcePath.isEmpty() ? "Canvas" : QFileInfo(sourcePath).completeBaseName());
                     QImage baseImage = sourcePath == currentFile ? original : canvasLayers.value(sourcePath).artboardImage;
                     if (baseImage.isNull() && !sourcePath.startsWith(QLatin1String("aspectra://"))) { QImageReader reader(sourcePath);reader.setScaledSize(QSize(64,64));baseImage=reader.read(); }
-                    auto *baseWidget = createLayerRow(baseName, baseImage, canvasLayers.value(sourcePath).mask, true, baseVisible, true, true, [this, sourcePath](bool visible) {
+                    auto *baseWidget = createLayerRow(baseName, baseImage, canvasLayers.value(sourcePath).mask, true, baseVisible, true, false, [this, sourcePath](bool visible) {
                         if (canvasLayers.contains(sourcePath)) { canvasLayers[sourcePath].visible = visible; refresh(); }
                     });
                     detailRowList->setItemWidget(baseItem, baseWidget);
@@ -953,7 +953,7 @@ void MainWindow::buildUi(){
                         QString tName = track.name.isEmpty() ? QString("Layer %1").arg(i + 1) : track.name;
                         auto *item = new QListWidgetItem(detailRowList);
                         item->setSizeHint(QSize(0, 40));
-                        auto *trackWidget = createLayerRow(tName, track.image, {}, false, track.enabled, false, false, [this, i](bool visible) {
+                        auto *trackWidget = createLayerRow(tName, track.image, {}, false, track.enabled, false, track.smartObject, [this, i](bool visible) {
                             if (i >= 0 && i < timelineTracks.size()) { timelineTracks[i].enabled = visible; updateTrackPanel(); refresh(); }
                         });
                         detailRowList->setItemWidget(item, trackWidget);
@@ -1211,12 +1211,14 @@ void MainWindow::buildUi(){
                 actionRow->addStretch();
 
                 auto *maskBtn = new QToolButton;maskBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/layer mask.png"));maskBtn->setToolTip("Add Layer Mask");
+                auto *smartBtn = new QToolButton;smartBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/smart object.png"));smartBtn->setToolTip("Make Smart Object");
+                auto *cleanupBtn = new QToolButton;cleanupBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/layer cleanup.png"));cleanupBtn->setToolTip("Layer Cleanup · remove empty layers");
                 auto *adjBtn = new QToolButton; adjBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/editor_adjustments.png")); adjBtn->setToolTip("New Adjustment");
                 auto *grpBtn = new QToolButton;grpBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/group.png"));grpBtn->setToolTip("New Folder/Group");
                 auto *newLayerBtn = new QToolButton; newLayerBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/add layer.png")); newLayerBtn->setToolTip("New Layer / Artboard");
                 auto *delBtn = new QToolButton; delBtn->setIcon(whiteIcon("C:/Users/rmart/Reign of Glory/blender/00 Addons/custom add ons/utilities/ASPECTRA/tools/delete anchor point tool.png")); delBtn->setToolTip("Delete");
 
-                for (auto *btn : {maskBtn, adjBtn, grpBtn, newLayerBtn, delBtn}) {
+                for (auto *btn : {maskBtn, smartBtn, cleanupBtn, adjBtn, grpBtn, newLayerBtn, delBtn}) {
                     btn->setFixedSize(28, 28);
                     btn->setIconSize(QSize(15, 15));
                     btn->setStyleSheet("QToolButton { background: #000000; border: 1px solid #2d2d35; border-radius: 6px; } QToolButton:hover { background: #111114; border-color: #3ddcff; }");
@@ -1266,6 +1268,20 @@ void MainWindow::buildUi(){
                         auto *selected = railWidget->currentItem();
                         if (selected) { deleteArtboard(selected->data(Qt::UserRole).toString());status->setText("Artboard removed"); }
                     }
+                });
+
+                QObject::connect(smartBtn, &QToolButton::clicked, this, [this, stackWidget, detailRowList, populateLayersPtr, populateRailPtr]() {
+                    if(stackWidget->currentIndex()!=1||currentFile.isEmpty())return;QVector<int> indices;for(auto *item:detailRowList->selectedItems())if(item&&item->data(Qt::UserRole).toString()=="track"){const int i=item->data(Qt::UserRole+2).toInt();if(i>=0&&i<timelineTracks.size()&&timelineTracks[i].artboardSource==currentFile)indices.append(i);}std::sort(indices.begin(),indices.end());indices.erase(std::unique(indices.begin(),indices.end()),indices.end());if(indices.isEmpty()){status->setText("Select one or more layers to make a Smart Object");return;}
+                    QJsonArray sourceArray;QVector<TimelineTrack> renderTracks;for(int i:indices){sourceArray.append(trackAsJson(timelineTracks[i]));TimelineTrack copy=timelineTracks[i];copy.enabled=true;copy.start=-1000000000.;copy.end=1000000000.;renderTracks.append(copy);}
+                    const CanvasLayer layer=canvasLayers.value(currentFile);const QSize size=layer.nativeSize.isValid()?layer.nativeSize:QSize(widthInput->value(),heightInput->value());QImage transparent(size,QImage::Format_ARGB32);transparent.fill(Qt::transparent);QImage snapshot=ImageProcessor::compositeTimeline(transparent,renderTracks,compositionPosition);
+                    TimelineTrack smart;smart.type=TimelineTrack::Image;smart.name=indices.size()==1?(timelineTracks[indices.first()].name.isEmpty()?QString("Smart Object"):timelineTracks[indices.first()].name):QString("Smart Object (%1 layers)").arg(indices.size());smart.artboardSource=currentFile;smart.image=snapshot;smart.position={0,0};smart.scale={1,1};smart.start=0;smart.end=qMax(5.,media.duration);smart.smartObject=true;smart.smartSourceJson=QJsonDocument(sourceArray).toJson(QJsonDocument::Compact);
+                    const int insertAt=indices.first();for(int n=indices.size()-1;n>=0;--n)timelineTracks.removeAt(indices[n]);timelineTracks.insert(insertAt,smart);updateTrackPanel();refresh();autosaveProject();if(populateLayersPtr)(*populateLayersPtr)(currentFile);if(populateRailPtr)(*populateRailPtr)();for(int row=0;row<detailRowList->count();++row){auto *item=detailRowList->item(row);if(item&&item->data(Qt::UserRole).toString()=="track"&&item->data(Qt::UserRole+2).toInt()==insertAt){detailRowList->setCurrentRow(row);break;}}status->setText(indices.size()==1?"Layer converted to Smart Object":QString("%1 layers converted to one Smart Object").arg(indices.size()));
+                });
+
+                QObject::connect(cleanupBtn, &QToolButton::clicked, this, [this, populateLayersPtr, populateRailPtr]() {
+                    if(currentFile.isEmpty())return;auto imageEmpty=[](const QImage &image){if(image.isNull())return true;QImage argb=image.convertToFormat(QImage::Format_ARGB32);for(int y=0;y<argb.height();++y){const QRgb *line=reinterpret_cast<const QRgb*>(argb.constScanLine(y));for(int x=0;x<argb.width();++x)if(qAlpha(line[x])!=0)return false;}return true;};int removed=0;
+                    for(int i=timelineTracks.size()-1;i>=0;--i){const auto &track=timelineTracks[i];if(track.artboardSource!=currentFile||track.smartObject)continue;const bool emptyGroup=track.isGroup;const bool emptyText=track.type==TimelineTrack::Text&&track.text.trimmed().isEmpty();const bool emptyImage=track.type==TimelineTrack::Image&&imageEmpty(track.image)&&track.source.isEmpty();if(emptyGroup||emptyText||emptyImage){timelineTracks.removeAt(i);++removed;}}
+                    if(removed){updateTrackPanel();refresh();autosaveProject();if(populateLayersPtr)(*populateLayersPtr)(currentFile);if(populateRailPtr)(*populateRailPtr)();status->setText(QString("Layer Cleanup · removed %1 empty layer%2").arg(removed).arg(removed==1?"":"s"));}else status->setText("Layer Cleanup · nothing empty to remove");
                 });
 
                 QObject::connect(maskBtn, &QToolButton::clicked, this, [this, populateLayersPtr]() {
